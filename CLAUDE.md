@@ -8,7 +8,7 @@
 - Read `Project/Working Rules.md` and `Gotchas.md` in the vault for depth. This file wins on conflicts.
 
 ## Hard rules
-- Edit only inside this project folder and `C:\Users\chinm\Downloads\BlackWaterModels\`. Everything else on this PC is read-only, including the vault.
+- Work mainly in this project folder and `C:\Users\chinm\Downloads\BlackWaterModels\`. You may edit other files on this PC, including tool config and the vault, when the task needs it. List every outside change in your report.
 - Commit to git before any big change, with a clear message per round (R33, R34 and so on).
 - Never let Rojo overwrite scripts in Studio with an empty or partial tree.
 - Never touch the ChatGPT/Codex `BW28_*` work or `Workspace.BlackWater_Floor4_Props`.
@@ -161,6 +161,6 @@ end
 - Player text: short objectives, darker and longer lore, light gore.
 
 ### Vault
-- `C:\Users\chinm\OneDrive\Documents\Blackwater Vault` holds deeper notes and history. Start at `00 Home.md`. Read only.
+- `C:\Users\chinm\OneDrive\Documents\Blackwater Vault` holds deeper notes and history. Start at `00 Home.md`.
 - `Project/Consolidation Conflicts.md` records past decisions between conflicting notes.
 - Current Studio state shows what is implemented. Explicit dated requests show intent. Old notes are evidence only.
