@@ -1,0 +1,40 @@
+{
+  "name": "BlackWater-Lobby",
+  "servePort": 34872,
+  "servePlaceIds": [
+    97536935253958
+  ],
+  "emitLegacyScripts": true,
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedFirst": {
+      "$className": "ReplicatedFirst",
+      "$ignoreUnknownInstances": true,
+      "$path": "src/ReplicatedFirst"
+    },
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "$ignoreUnknownInstances": true,
+      "$path": "src/ReplicatedStorage"
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "$ignoreUnknownInstances": true,
+      "$path": "src/ServerScriptService"
+    },
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "$ignoreUnknownInstances": true,
+      "$path": "src/ServerStorage"
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "$ignoreUnknownInstances": true,
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$ignoreUnknownInstances": true,
+        "$path": "src/StarterPlayer/StarterPlayerScripts"
+      }
+    }
+  }
+}

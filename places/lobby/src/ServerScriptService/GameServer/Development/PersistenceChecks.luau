@@ -1,0 +1,191 @@
+--!nonstrict
+local Checks={}
+function Checks.Run()
+	assert(game:GetService("RunService"):IsStudio(),"Studio-only checks")
+	local Data=script.Parent.Parent.Data
+	local Schema=require(Data.ProfileSchema)
+	local Store=require(Data.MemoryProfileStore)
+	local Repository=require(Data.ProfileRepository)
+	local Run=require(Data.RunRecord)
+	local Util=require(game:GetService("ReplicatedStorage").Game.Shared.Utilities.TableUtil)
+	local ProfileService=require(script.Parent.Parent.Services.ProfileService)
+	local results={}
+	local now=2000000000
+	local function test(name,fn)
+		local ok,err=xpcall(fn,debug.traceback)
+		table.insert(results,{name=name,passed=ok,error=not ok and tostring(err) or nil})
+	end
+	local function setup(initial)
+		local store=Store.new(initial)
+		return store,Repository.new(store,function() return now end)
+	end
+	local function receipt(runId,milestone)
+		return {runId=runId or "RunA",milestoneId=milestone or "Floor05",occurredAt=now}
+	end
+	test("DeepFreeze traverses shallow-frozen roots and cycles",function()
+		local nested={value=1}
+		local outer=table.freeze({nested=nested})
+		Util.DeepFreeze(outer)
+		assert(table.isfrozen(nested))
+		local cyclic={};cyclic.self=cyclic
+		Util.DeepFreeze(cyclic)
+		assert(table.isfrozen(cyclic))
+		local copy=Util.DeepClone(cyclic)
+		assert(copy~=cyclic and copy.self==copy and not table.isfrozen(copy))
+	end)
+	test("New profiles are independent, immutable snapshots",function()
+		local store,repo=setup()
+		local a=repo:Load(101);local b=repo:Load(102)
+		assert(a.ok and a.code=="Created" and b.ok)
+		assert(a.profile.currencyBalance==0 and table.isfrozen(a.profile.accessibilityPreferences))
+		assert(repo:RecordDiscovery(101,"Report_5").ok)
+		assert(repo:Load(102).profile.discoveredLoreIds.Report_5==nil)
+	end)
+	test("Read failure never creates or overwrites a profile",function()
+		local profile=Schema.New();profile.currencyBalance=75
+		local store,repo=setup({Player_101=profile})
+		store:FailNext("Read",1)
+		assert(not repo:Load(101).ok)
+		assert(repo:Load(101).profile.currencyBalance==75)
+		store:FailNext("Read",1);assert(not repo:Load(102).ok)
+		local ok,missing=store:Read("Player_102");assert(ok and missing==nil)
+	end)
+	test("Failed creation remains absent and can retry",function()
+		local store,repo=setup()
+		store:FailNext("Update",1);assert(not repo:Load(101).ok)
+		local ok,missing=store:Read("Player_101");assert(ok and missing==nil)
+		assert(repo:Load(101).ok)
+	end)
+	test("Corrupt and future profiles are preserved, not defaulted",function()
+		local corrupt=Schema.New();corrupt.currencyBalance=-1
+		local future=Schema.New();future.schemaVersion=99
+		local store,repo=setup({Player_101=corrupt,Player_102=future})
+		assert(not repo:Load(101).ok and not repo:Load(102).ok)
+		local _,saved=store:Read("Player_101");assert(saved.currencyBalance==-1)
+		local _,newer=store:Read("Player_102");assert(newer.schemaVersion==99)
+	end)
+	test("Award and receipt commit together, duplicate pays once",function()
+		local store,repo=setup();assert(repo:Load(101).ok)
+		assert(repo:ApplyAward(101,receipt()).ok)
+		local second=repo:ApplyAward(101,receipt())
+		assert(second.ok and second.code=="AlreadyApplied" and second.profile.currencyBalance==10)
+		local count=0;for _ in second.profile.processedRewardReceipts do count+=1 end
+		assert(count==1)
+	end)
+	test("Failed award commits neither currency nor receipt",function()
+		local store,repo=setup();repo:Load(101)
+		store:FailNext("Update",1);assert(not repo:ApplyAward(101,receipt()).ok)
+		local unchanged=repo:Load(101).profile
+		assert(unchanged.currencyBalance==0 and next(unchanged.processedRewardReceipts)==nil)
+		assert(repo:ApplyAward(101,receipt()).profile.currencyBalance==10)
+	end)
+	test("Replay after service reload is still idempotent",function()
+		local store,repo=setup();repo:Load(101);repo:ApplyAward(101,receipt())
+		local reloaded=Repository.new(store,function() return now end)
+		assert(reloaded:Load(101).ok)
+		assert(reloaded:ApplyAward(101,receipt()).code=="AlreadyApplied")
+	end)
+	test("Receipt conflicts and expired/future awards are rejected",function()
+		local _,repo=setup();repo:Load(101);repo:ApplyAward(101,receipt())
+		local altered=receipt();altered.occurredAt-=1
+		assert(repo:ApplyAward(101,altered).code=="ReceiptConflict")
+		local expired=receipt("Old");expired.occurredAt=now-Schema.ReceiptRetentionSeconds-1
+		assert(repo:ApplyAward(101,expired).code=="ReceiptExpired")
+		local future=receipt("Future");future.occurredAt=now+1
+		assert(repo:ApplyAward(101,future).code=="FutureReceipt")
+		assert(repo:Load(101).profile.currencyBalance==10)
+	end)
+	test("Receipt retention removes only expired entries",function()
+		local profile=Schema.New()
+		local old={runId="Old",userId=101,milestoneId="Floor05",amount=10,
+			occurredAt=now-Schema.ReceiptRetentionSeconds-1}
+		profile.processedRewardReceipts[Schema.ReceiptId(old)]=old
+		local _,repo=setup({Player_101=profile});repo:Load(101)
+		local response=repo:ApplyAward(101,receipt())
+		assert(response.ok and response.profile.processedRewardReceipts[Schema.ReceiptId(old)]==nil)
+		assert(repo:ApplyAward(101,{runId="Old",milestoneId="Floor05",occurredAt=old.occurredAt}).code=="ReceiptExpired")
+	end)
+	test("Full unexpired receipt history fails safely",function()
+		local profile=Schema.New()
+		for index=1,Schema.ReceiptLimit do
+			local saved={runId="Run"..index,userId=101,milestoneId="Floor05",amount=10,occurredAt=now}
+			profile.processedRewardReceipts[Schema.ReceiptId(saved)]=saved
+		end
+		local _,repo=setup({Player_101=profile});assert(repo:Load(101).ok)
+		assert(repo:ApplyAward(101,receipt("Overflow")).code=="ReceiptCapacityReached")
+		assert(repo:Load(101).profile.currencyBalance==0)
+	end)
+	test("Currency overflow rolls back award",function()
+		local profile=Schema.New();profile.currencyBalance=Schema.MaxCurrency
+		local _,repo=setup({Player_101=profile});repo:Load(101)
+		assert(not repo:ApplyAward(101,receipt()).ok)
+		local saved=repo:Load(101).profile
+		assert(saved.currencyBalance==Schema.MaxCurrency and next(saved.processedRewardReceipts)==nil)
+	end)
+	test("Completion is idempotent and does not grant currency",function()
+		local _,repo=setup();repo:Load(101)
+		assert(repo:RecordCompletion(101,"RunA",now).ok)
+		local second=repo:RecordCompletion(101,"RunA",now)
+		assert(second.code=="AlreadyApplied" and second.profile.standardCompletionCount==1)
+		assert(second.profile.hardModeUnlocked and second.profile.currencyBalance==0)
+	end)
+	test("Only owned cosmetics can equip; lore is idempotent",function()
+		local _,repo=setup();repo:Load(101)
+		assert(not repo:EquipCosmetic(101,"Flashlight","Steel").ok)
+		assert(repo:GrantCosmetic(101,"Steel").ok)
+		assert(repo:EquipCosmetic(101,"Flashlight","Steel").ok)
+		assert(not repo:EquipCosmetic(101,"Outfit","Steel").ok)
+		assert(repo:RecordDiscovery(101,"Report_5").ok and repo:RecordDiscovery(101,"Report_5").ok)
+		assert(repo:Load(101).profile.discoveredLoreIds.Report_5)
+	end)
+	test("Preference saves cannot mutate currency or run progress",function()
+		local _,repo=setup();repo:Load(101)
+		assert(not repo:SavePreferences(101,{currencyBalance=1000}).ok)
+		assert(not repo:SavePreferences(101,{currentFloorNumber=1}).ok)
+		assert(not repo:SavePreferences(101,{captionsEnabled="yes"}).ok)
+		assert(repo:SavePreferences(101,{reducedFlashing=true}).profile.accessibilityPreferences.reducedFlashing)
+		assert(repo:Load(101).profile.currencyBalance==0)
+	end)
+	test("Storage aborts yielded or failed transforms without partial writes",function()
+		local store=Store.new({Key={value=1}})
+		local ok,code=store:Update("Key",function(value) value.value=2;coroutine.yield();return value end)
+		assert(not ok and code=="TransformYielded")
+		assert(not store:Update("Key",function(value) value.value=3;error("Fault") end))
+		local _,saved=store:Read("Key");assert(saved.value==1)
+		assert(store:Update("Key",function(value) value.value=4;return value end))
+		local _,after=store:Read("Key");assert(after.value==4)
+	end)
+	test("Run records copy a 1-4 player roster and stay outside profiles",function()
+		local roster={101,102}
+		local run=Run.New("RunA",roster,"Standard",42,now)
+		roster[1]=999
+		assert(run.originalRoster[1]==101 and table.isfrozen(run.originalRoster))
+		assert(run.currentFloorNumber==5 and run.phase=="Initializing")
+		assert(run.participants["101"].lifeState=="Alive")
+		assert(run.currencyBalance==nil and Schema.New().currentFloorNumber==nil)
+		assert(not pcall(function() Run.New("R",{101,101},"Standard",1,now) end))
+		assert(not pcall(function() Run.New("R",{},"Standard",1,now) end))
+		assert(not pcall(function() Run.New("R",{1,2,3,4,5},"Standard",1,now) end))
+		assert(not pcall(function() Run.New("R",{[1]=101,[3]=102},"Standard",1,now) end))
+	end)
+	test("ProfileService blocks failed loads and supports retry",function()
+		local added=Instance.new("BindableEvent");local removed=Instance.new("BindableEvent")
+		local players={PlayerAdded=added.Event,PlayerRemoving=removed.Event}
+		local attrs={}
+		local player={UserId=101,Parent=players,SetAttribute=function(_,key,value) attrs[key]=value end}
+		function players:GetPlayers() return {player} end
+		local store,repo=setup();store:FailNext("Read",1)
+		local service=ProfileService.new(repo,players,nil);service:Init({});service:Start()
+		assert(attrs.ProfileStatus=="Failed" and not service:IsReady(player))
+		assert(service:ApplyAward(player,receipt()).code=="ProfileNotReady")
+		assert(service:LoadPlayer(player).ok and service:IsReady(player))
+		assert(service:ApplyAward(player,receipt()).profile.currencyBalance==10)
+		assert(service:GetProfile(player).currencyBalance==10)
+		service:Destroy();service:Destroy()
+		assert(not service:IsReady(player))
+		added:Destroy();removed:Destroy()
+	end)
+	local passed=0;for _,r in results do if r.passed then passed+=1 end end
+	return {passed=passed,total=#results,results=results}
+end
+return table.freeze(Checks)
