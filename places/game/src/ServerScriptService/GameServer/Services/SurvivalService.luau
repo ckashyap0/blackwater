@@ -80,6 +80,7 @@ end
 function Service:RecalculateContinuation()self:_CheckWipe()end
 function Service:SetConnectionManaged(value)self._connectionManaged=value==true end
 function Service:SetCabinProtection(callback)self._cabinProtection=callback end
+function Service:SetExtraLife(callback)self._extraLife=callback end
 function Service:Damage(d)
 	if not Model.ValidDamage(d) then return false,"InvalidDamage" end
 	self:_Sync()
@@ -88,6 +89,13 @@ function Service:Damage(d)
 	if player and self._cabinProtection and self._cabinProtection(player)then return false,"CabinSecured" end
 	if not s or not player or not snapshot or not activePhases[snapshot.phase] or self._suspended then return false,"Unavailable" end
 	local result,reason=Model.Damage(s,d,self._clock());if not result then return false,reason end
+	-- Extra Life Token: spent instead of going down. Abyss, Consumption and bypass damage still count.
+	if result.lifeState~="Alive" and d.damageType=="Attack" and not d.bypassDowned and self._extraLife and self._extraLife(player) then
+		local saved=table.clone(s);saved.protectionUntil=self._clock()+Config.ProtectionSeconds
+		if not self:_Commit(d.targetUserId,saved) then return false,"StaleRun" end
+		player:SetAttribute("EHExtraLifeUsedAt",self._clock())
+		return true,"ExtraLife"
+	end
 	if not self:_Commit(d.targetUserId,result) then return false,"StaleRun" end
 	self:_CheckWipe();return true,result.lifeState
 end

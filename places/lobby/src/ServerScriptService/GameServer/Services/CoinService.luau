@@ -11,6 +11,7 @@
 --
 -- Other services:
 --   CoinService:Award(player,amount,reason) -> coins given (x2 with the gamepass); for in-game rewards
+--   CoinService:AwardOnce(player,amount,reason,key) -> pays once per key, written straight away; for floor pay
 --   CoinService:Give(player,amount,reason) -> gives coins as they are (no x2); refunds
 --   CoinService:Spend(player,amount)        -> true if they could afford it (and it was taken)
 --   CoinService:Get(player)                 -> balance
@@ -21,13 +22,14 @@
 -- two servers at once can never overwrite a balance. Purchases are written straight away, and every
 -- purchase id is remembered so a pack is never delivered twice.
 local Players=game:GetService("Players")
-local DataStoreService=game:GetService("DataStoreService")
 local MarketplaceService=game:GetService("MarketplaceService")
 local Shared=game.ReplicatedStorage.Game.Shared
 local Scope=require(Shared.Utilities.CleanupScope)
+local Stores=require(Shared.Utilities.DataStores)
 local Config=require(Shared.Config.CoinConfig)
 local Service={};Service.__index=Service
 local KEEP_RECEIPTS=60
+local KEEP_RUN_RECEIPTS=30 -- ("run:" keys, so a long play streak never pushes out a purchase id)
 -- Economy telemetry (Creator Hub > Analytics > Economy): every coin source and sink is logged AFTER it
 -- has been applied, with the balance it left. Never blocks or fails the coin change itself.
 local AnalyticsService=game:GetService("AnalyticsService")
@@ -48,19 +50,23 @@ local function clean(raw)
 	return d
 end
 local function trim(receipts)
-	local list={}
-	for k,t in receipts do table.insert(list,{k,t}) end
-	if #list<=KEEP_RECEIPTS then return end
-	table.sort(list,function(a,b)return a[2]>b[2] end)
-	for i=KEEP_RECEIPTS+1,#list do receipts[list[i][1]]=nil end
+	local bought,runs={},{}
+	for k,t in receipts do table.insert(string.sub(k,1,4)=="run:" and runs or bought,{k,t}) end
+	for _,e in {{bought,KEEP_RECEIPTS},{runs,KEEP_RUN_RECEIPTS}} do
+		local list,keep=e[1],e[2]
+		if #list>keep then
+			table.sort(list,function(a,b)return a[2]>b[2] end)
+			for i=keep+1,#list do receipts[list[i][1]]=nil end
+		end
+	end
 end
 
 function Service.new()
-	return setmetatable({Name="CoinService",Dependencies={},_base={},_pending={},_ready={},_mult={},_saving={},_products={}},Service)
+	return setmetatable({Name="CoinService",Dependencies={},_base={},_pending={},_ready={},_mult={},_saving={},_products={},_unsaved={},_paid={}},Service)
 end
 function Service:Init()
 	self._scope=Scope.new()
-	local ok,store=pcall(function()return DataStoreService:GetDataStore(Config.Store)end)
+	local ok,store=pcall(function()return Stores.Get(Config.Store)end)
 	self._store=ok and store or nil
 	local network=game.ReplicatedStorage.Game.Network
 	local remote=network:FindFirstChild("Coins")
@@ -76,7 +82,7 @@ end
 
 -- ===== balance =====
 function Service:_Key(userId)return "U_"..userId end
-function Service:Get(p)return (self._base[p] or 0)+(self._pending[p] or 0) end
+function Service:Get(p)return (self._base[p] or 0)+(self._pending[p] or 0)+(self._unsaved[p] or 0) end
 function Service:_Apply(p)
 	if p.Parent~=Players then return end
 	p:SetAttribute("EHCoins",self:Get(p))
@@ -144,6 +150,51 @@ function Service:Award(p,amount,reason)
 	self:_Apply(p)
 	logEconomy(p,Enum.AnalyticsEconomyFlowType.Source,given,self:Get(p),T.Gameplay,"Earn:"..tostring(reason or "Gameplay"))
 	self._remote:FireClient(p,"Earned",given,reason)
+	return given
+end
+-- floor pay: x2 for 2x Coins owners, and each key pays once however many times it is asked, across
+-- servers and rejoins (the key is saved with the coins). Written straight away, so the Lobby shows the
+-- new balance after the teleport. If the save fails the coins fall back to the normal pending merge.
+function Service:AwardOnce(p,amount,reason,key)
+	amount=math.floor(tonumber(amount) or 0)
+	if amount<=0 or p.Parent~=Players or type(key)~="string" then return 0 end
+	local paid=self._paid[p] or {};self._paid[p]=paid
+	if paid[key] then return 0 end
+	paid[key]=true
+	local given=amount*(self._mult[p] or 1)
+	self._unsaved[p]=(self._unsaved[p] or 0)+given
+	self:_Apply(p)
+	logEconomy(p,Enum.AnalyticsEconomyFlowType.Source,given,self:Get(p),T.Gameplay,"Earn:"..tostring(reason or "Gameplay"))
+	self._remote:FireClient(p,"Earned",given,reason)
+	local userId=p.UserId
+	task.spawn(function()
+		local ok,res=false,nil
+		if self._store then
+			for attempt=1,3 do
+				ok,res=pcall(function()
+					return self._store:UpdateAsync(self:_Key(userId),function(old)
+						local d=clean(old)
+						if d.receipts[key] then return nil end
+						d.coins+=given
+						d.receipts[key]=os.time()
+						trim(d.receipts)
+						return d
+					end)
+				end)
+				if ok then break end
+				task.wait(attempt)
+			end
+		end
+		self._unsaved[p]=math.max(0,(self._unsaved[p] or 0)-given)
+		if ok then
+			if self._base[p]~=nil and res then self._base[p]=clean(res).coins end
+		else
+			warn("[ElevatorHorror] Floor pay save failed, merging later: "..tostring(res))
+			self._pending[p]=(self._pending[p] or 0)+given
+			if p.Parent~=Players then self:_Flush(p,userId) end
+		end
+		self:_Apply(p)
+	end)
 	return given
 end
 -- coins handed back (a duplicate from a mystery box): never doubled, saved soon after
@@ -215,8 +266,10 @@ function Service:Start()
 	self._scope:Add(Players.PlayerRemoving:Connect(function(p)
 		local userId=p.UserId
 		task.spawn(function()
+			local t=os.clock()
+			while (self._unsaved[p] or 0)>0 and os.clock()-t<15 do task.wait(.2) end
 			self:_Flush(p,userId)
-			self._base[p]=nil;self._pending[p]=nil;self._ready[p]=nil;self._mult[p]=nil
+			self._base[p]=nil;self._pending[p]=nil;self._ready[p]=nil;self._mult[p]=nil;self._unsaved[p]=nil;self._paid[p]=nil
 		end)
 	end))
 	for _,p in Players:GetPlayers() do task.spawn(function()self:_Load(p)end) end
@@ -254,7 +307,12 @@ function Service:Destroy()
 		end
 	end
 	local t=os.clock()
-	while waiting>0 and os.clock()-t<20 do task.wait() end
+	while os.clock()-t<20 do
+		local unsaved=0
+		for _,n in self._unsaved do unsaved+=n end
+		if waiting<=0 and unsaved<=0 then break end
+		task.wait()
+	end
 	if self._scope then self._scope:Destroy() end
 end
 return table.freeze(Service)

@@ -6,7 +6,7 @@ Studio children it does not know about (assets, ScreenGuis, MeshParts).
 import json, os, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MINIMUMS = {"lobby": 103, "game": 146}
+MINIMUMS = {"lobby": 104, "game": 149}
 errors = []
 
 def ignores(path):

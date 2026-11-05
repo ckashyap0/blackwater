@@ -10,6 +10,7 @@ local Level4Floor=require(script.Parent.Parent.Floors.Level4Floor)
 local Intro=require(game.ReplicatedStorage.Game.Shared.Utilities.IntroTimeline)
 local Slots=require(game.ReplicatedStorage.Game.Shared.Utilities.CabinSlots)
 local Level5Config=require(game.ReplicatedStorage.Game.Shared.Config.Level5)
+local Economy=require(game.ReplicatedStorage.Game.Shared.Config.EconomyConfig)
 local Refs=require(game.ReplicatedStorage.Game.Shared.Utilities.FloorRefs)
 local SoundFade=require(game.ReplicatedStorage.Game.Shared.Utilities.SoundFade)
 local Service={};Service.__index=Service
@@ -44,18 +45,27 @@ end
 local finished={Resolving=true,Completed=true,Failed=true,Closing=true}
 function Service.new(options)
 	options=options or {}
-	return setmetatable({Name="ElevatorService",Dependencies={"EnvironmentService","GameRunService","InteractionService","InventoryService","SurvivalService","CharacterService","SessionService"},
+	return setmetatable({Name="ElevatorService",Dependencies={"EnvironmentService","GameRunService","InteractionService","InventoryService","SurvivalService","CharacterService","SessionService","CoinService","TokenService"},
 		_players=options.players or Players,_factory=options.factory or Templates.Build,_preloadEnabled=options.factory==nil,_introSeconds=options.introSeconds or Level5Config.IntroSeconds,_arrivalDoorSeconds=options.arrivalDoorSeconds or (options.introSeconds and 2 or Intro.DoorSeconds),_elapsed=0,_alpha=0},Service)
 end
 function Service:Init(deps)
 	self._environment=deps.EnvironmentService;self._runs=deps.GameRunService;self._interactions=deps.InteractionService;self._inventory=deps.InventoryService
 	self._survival=deps.SurvivalService;self._characters=deps.CharacterService;self._session=deps.SessionService;self._scope=Scope.new()
+	self._coins=deps.CoinService;self._tokens=deps.TokenService
 	if self._environment.Role~="Game" then return end
 	self._runs.FloorsManaged=true
 	self._cabin=self._environment.Model.Elevator
 	self._doorFrames={}
 	for _,name in {"LeftDoor","RightDoor"} do local door=Refs.Get(self._cabin,name);self._doorFrames[name]=door.CFrame;door:SetAttribute('ClosedFrame',door.CFrame) end
 	self:_Doors(0);self:_State("Closed","WAITING FOR CREW")
+	if self._tokens then
+		-- task.spawn: Use takes the token before its first yield and saves it in the background
+		self._survival:SetExtraLife(function(player)
+			if self._tokens:Get(player,"Life")<1 then return false end
+			task.spawn(self._tokens.Use,self._tokens,player,"Life")
+			return true
+		end)
+	end
 	self._survival:SetCabinProtection(function(player)
 		local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 		return self._sealed==true and root and Policy.InCabin(root.Position)
@@ -172,7 +182,28 @@ function Service:RequestDeparture()
 	self:_State("Closing","STAND CLEAR OF THE DOORS");return true,"Closing"
 end
 function Service:_Command(action,payload)
-	return self._runs:Dispatch({token=self._runs:GetToken(),action=action,payload=payload or {}})
+	local before=self._runs:GetSnapshot()
+	local result=self._runs:Dispatch({token=self._runs:GetToken(),action=action,payload=payload or {}})
+	if result.ok and before then
+		if action=="CompleteObjective" then self:_PayCrew(before,Economy.FloorRewards[before.currentFloorNumber],"F"..tostring(before.currentFloorNumber))
+		elseif action=="Escape" then
+			self:_PayCrew(before,Economy.FloorRewards[before.currentFloorNumber],"F"..tostring(before.currentFloorNumber),payload.escapedUserIds)
+			self:_PayCrew(before,Economy.EscapeBonus,"Escape",payload.escapedUserIds)
+		end
+	end
+	return result
+end
+-- FLOOR PAY: everyone still in the run and connected, except the dead (a downed player can still be
+-- revived, so they count). An admin floor transfer pays nothing. The key is unique per run and floor.
+function Service:_PayCrew(snapshot,amount,milestone,onlyIds)
+	if not self._coins or self._adminTarget or not amount then return end
+	for _,p in self._players:GetPlayers()do
+		local record=snapshot.participants[tostring(p.UserId)]
+		local included=not onlyIds or table.find(onlyIds,p.UserId)~=nil
+		if record and included and record.connectionState=="Connected" and record.lifeState~="Dead" then
+			self._coins:AwardOnce(p,amount,milestone,"run:"..snapshot.runId..":"..milestone)
+		end
+	end
 end
 -- STREAMED FLOOR SWAPS (R26). A floor is ~10-17k parts. Dropping one into the world (or deleting
 -- one) in a single frame froze every screen for a second mid-ride. Instead:
@@ -1074,6 +1105,11 @@ function Service:_Debug(cmd)
 		if f.TestLift then f._stage=6;f:TestLift() elseif s.objectiveSnapshot.status~="Completed" then self:_Command("CompleteObjective");f._state="Completed" end
 		task.wait(.2)
 		local ok,code=self:RequestDeparture();return tostring(ok).." "..tostring(code)
+	elseif cmd=="Hurt" then
+		-- a lethal Attack on the first player: Extra Life, downed, revive and wipe can be tested before a floor can hurt anyone
+		local p=self._players:GetPlayers()[1];if not p then return "NoPlayer" end
+		local ok,code=self._survival:Damage({targetUserId=p.UserId,sourceId="Debug",damageType="Attack",lethal=true,bypassDowned=false})
+		return tostring(ok).." "..tostring(code)
 	end
 	return "UnknownCommand"
 end

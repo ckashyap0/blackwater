@@ -30,8 +30,9 @@ function Service.new()
 end
 local function getStore(ordered,name)
 	local ok,s=pcall(function()
-		if ordered then return DataStoreService:GetOrderedDataStore(name) end
-		return DataStoreService:GetDataStore(name)
+		local Stores=require(game.ReplicatedStorage.Game.Shared.Utilities.DataStores)
+		if ordered then return Stores.GetOrdered(name) end
+		return Stores.Get(name)
 	end)
 	return ok and s or nil
 end

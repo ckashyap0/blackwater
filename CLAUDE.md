@@ -144,6 +144,8 @@ end
 
 - Then poll `Workspace.Runtime.DescentEnvironment` for the child with the expected `EncounterId` and `TaskActive`.
 - `ServerStorage.CoinDebug` is the coin tool the hard rule bans.
+- Since R33, Studio sessions read and write saved data in a separate `StudioTest` scope through `Shared.Utilities.DataStores`. Live data stays untouched, and Studio accounts start from empty. New stores must go through that module.
+- `ElevatorDebug` also takes `Hurt`: a lethal Attack on the first player, for testing Extra Life, downed and wipe. A solo player who goes down wipes the run at once, because nobody is left to revive them.
 
 ### Rounds
 - Read the whole batch and make one task per point.

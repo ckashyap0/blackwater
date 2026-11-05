@@ -128,7 +128,7 @@ function Service:_FirstVisit(p)
 	pcall(function()inGroup=p:IsInGroupAsync(Config.GroupId)end)
 	local first=false
 	local ok=pcall(function()
-		local store=DataStoreService:GetDataStore(Config.FirstVisitStore)
+		local store=require(game.ReplicatedStorage.Game.Shared.Utilities.DataStores).Get(Config.FirstVisitStore)
 		store:UpdateAsync(tostring(p.UserId),function(old)
 			if old~=nil then first=false;return nil end
 			first=true;return {at=os.time()}

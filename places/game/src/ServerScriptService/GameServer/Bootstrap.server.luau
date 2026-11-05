@@ -30,6 +30,7 @@ local ok,err=xpcall(function()
 	local ElevatorService=require(root.Services.ElevatorService)
 	local CosmeticService=require(root.Services.CosmeticService)
 	local TokenService=require(root.Services.TokenService)
+	local CoinService=require(root.Services.CoinService)
 	local MemoryProfileStore=require(root.Data.MemoryProfileStore)
 	local ProfileRepository=require(root.Data.ProfileRepository)
 	local repository=ProfileRepository.new(MemoryProfileStore.new())
@@ -46,8 +47,9 @@ local ok,err=xpcall(function()
 		PartyService.new(),
 		EquipmentService.new(),
 		FoundationStateService.new(),
-		ElevatorService.new(),
+		CoinService.new(), -- floor pay, and routes token purchases
 		TokenService.new(), -- Jumpscare / Extra Life tokens: how many each player has
+		ElevatorService.new(),
 		CosmeticService.new(), -- (after TokenService)
 		NetworkService.new(gameRoot.Network,diagnostics),
 		RunDriver.new(root.Development),

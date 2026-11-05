@@ -15,10 +15,10 @@
 -- Every save is an UpdateAsync that applies just the change, so two servers (or a failed load) can never
 -- overwrite each other.
 local Players=game:GetService("Players")
-local DataStoreService=game:GetService("DataStoreService")
 local MarketplaceService=game:GetService("MarketplaceService")
 local Shared=game.ReplicatedStorage.Game.Shared
 local Scope=require(Shared.Utilities.CleanupScope)
+local Stores=require(Shared.Utilities.DataStores)
 local Config=require(Shared.Config.TokenConfig)
 local Service={};Service.__index=Service
 local KEEP_RECEIPTS=60
@@ -55,7 +55,7 @@ end
 function Service:Init(deps)
 	self._coins=deps.CoinService
 	self._scope=Scope.new()
-	local ok,store=pcall(function()return DataStoreService:GetDataStore(Config.Store)end)
+	local ok,store=pcall(function()return Stores.Get(Config.Store)end)
 	self._store=ok and store or nil
 	local network=game.ReplicatedStorage.Game.Network
 	local remote=network:FindFirstChild("Tokens")

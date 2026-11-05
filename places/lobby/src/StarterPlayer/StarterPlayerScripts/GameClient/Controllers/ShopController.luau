@@ -231,7 +231,7 @@ function Controller:Init(deps)
 		local t=tokenById[card:GetAttribute("Token") or ""]
 		local buy=t and card:FindFirstChild("Buy")
 		if buy then
-			local c={card=card,t=t,buy=buy,productId=t.ProductId or 0,price=ROBUX.." "..t.Price,bg=buy.BackgroundColor3,bgT=0,text=buy.TextColor3,
+			local c={card=card,t=t,buy=buy,productId=t.OnSale~=false and t.ProductId or 0,price=ROBUX.." "..t.Price,bg=buy.BackgroundColor3,bgT=0,text=buy.TextColor3,
 				have=card:FindFirstChild("Have"),accent=card:GetAttribute("Accent"),cardStroke=card:FindFirstChildOfClass("UIStroke")}
 			c.cardStrokeT=c.cardStroke and c.cardStroke.Transparency
 			table.insert(self._tokens,c)

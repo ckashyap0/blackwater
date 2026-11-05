@@ -280,7 +280,9 @@ function Controller:_Update()
  end
  local wet=false
  for _,z in self._spillZones do if z.Parent and z:GetAttribute('SlipActive')==true then wet=true;break end end
- local side=wet and MOP_LINE or ''
+ -- (the mop task is retired while MopSideTask is off, so the line follows that switch; floor pay borrows it for a moment)
+ local side=(wet and Level5.MopSideTask) and MOP_LINE or ''
+ if self._coinNote and now<(self._coinNoteUntil or 0) then side=self._coinNote end
  -- a new floor starts with a clean line: the last floor's objective is never shown on it, even for a frame
  if floor~=self._lastFloor then self._lastFloor=floor;self._shownState=nil;self._pending=nil;self._label.Text='';self._side.Text='';self._side.Visible=false end
  local composed=message..'\n'..side
@@ -365,6 +367,12 @@ function Controller:_FadeStep()
  end
 end
 function Controller:Start()
+ task.spawn(function()
+  local remote=game.ReplicatedStorage.Game:WaitForChild('Network'):WaitForChild('Coins',30)
+  if remote then self._scope:Add(remote.OnClientEvent:Connect(function(kind,amount)
+   if kind=='Earned' then self._coinNote='+'..tostring(amount)..' coins';self._coinNoteUntil=os.clock()+4 end
+  end)) end
+ end)
  self._scope:Add(RunService.RenderStepped:Connect(function()local ok,err=pcall(self._FadeStep,self);if not ok then warn(err) end end))
  self._scope:Add(game.RunService.Heartbeat:Connect(function(dt)self._refresh+=dt;if self._refresh>=.15 then self._refresh=0;self:_Update()end end))
  -- (before the frame is drawn, so a moving object's outline is always exactly on it)

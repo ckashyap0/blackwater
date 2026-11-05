@@ -92,7 +92,7 @@ function Service:Init(deps)
 	self._coins=deps.CoinService
 	self._tokens=deps.TokenService
 	self._scope=Scope.new()
-	local ok,store=pcall(function()return DataStoreService:GetDataStore(Config.Store)end)
+	local ok,store=pcall(function()return require(Shared.Utilities.DataStores).Get(Config.Store)end)
 	self._store=ok and store or nil
 	local network=game.ReplicatedStorage.Game.Network
 	local remote=network:FindFirstChild("Cosmetics")
