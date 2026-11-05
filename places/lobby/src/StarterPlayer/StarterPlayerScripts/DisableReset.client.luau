@@ -1,3 +1,4 @@
+-- Rojo sync test comment, safe to remove
 --!nonstrict
 -- Turns off "Reset Character" in the Roblox menu, so players can't kill themselves to respawn.
 -- (SetCore can fail for a moment while the core scripts load, so it retries.)
