@@ -21,6 +21,14 @@
 - Plan exact steps before building. Be token-efficient without lowering quality.
 - End every report by reminding the owner to publish BOTH places. Say whether anything was actually saved or published. A reminder is not proof.
 
+## Team (3 people, each may run their own Claude)
+- **Branches:** never commit straight to `main`. Work on `<name>/<topic>` (e.g. `hunter/floor3-lights`) and merge through a pull request that another teammate approves. Pull `main` before starting.
+- **PC-specific paths:** the folder paths in Hard rules and Vault (`C:\Users\chinm\...`) exist only on Chinmay's PC. On another PC, stay inside this repo unless your own person says otherwise, and never edit their private files.
+- **Team Create:** before connecting Rojo or editing through Studio MCP, check who else is in the session. Script pushes reach them instantly, so tell the team first and never accept a Rojo patch that touches scripts someone else is working on.
+- **Stay in your lane:** don't rewrite, rename or reformat another teammate's scripts or models unless the task asks for it. If you need to, say so in the PR description.
+- **Ideas:** put new ideas in `ideas/<your-name>/` using `ideas/TEMPLATE.md`, or open a GitHub Issue. Ideas are notes, not code, until the team agrees on them.
+- **This repo is public.** Never commit secrets: API keys, Roblox cookies, Open Cloud keys or `.env`.
+
 ## Architecture map
 Paths are the same in both places unless marked.
 
