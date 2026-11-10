@@ -189,7 +189,7 @@ function M.Start()
 		local n = utf8.len(line.ContentText) or #line.Text
 		line.MaxVisibleGraphemes = (k >= 1) and -1 or math.floor(n * k + .5)
 		-- the box: in with the first line (rising a few pixels), out after the last
-		local b = smooth((t - first.shown) / .3) * smooth((last.finish - t) / .4)
+		local b = smooth((t - first.shown) / .3) * smooth((last.finish - t) / .8) -- (R36) a slower, clearly visible fade out once the talk is done
 		box.GroupTransparency = 1 - b
 		box.Position = boxPos -- (Nov 8) fades in place
 		-- the words (and who is speaking) fade in and out line by line inside it

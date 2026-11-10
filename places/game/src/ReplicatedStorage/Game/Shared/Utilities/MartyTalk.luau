@@ -4,9 +4,9 @@
 -- speaker's portrait on the left (your Roblox headshot / a still view of Marty's face in Portrait.NpcView), the
 -- name over the line and the line typing out.
 -- Unlike Hale's talk this one is per player: whoever holds TALK on Marty gets the conversation on their own screen.
--- The server (ElevatorService:_OnMartyTalk) sets two attributes on that player:
+-- The server (ElevatorService:_OnMartyTalk) sets two attributes on that player (R36: per spot):
 --   EHMartyTalkAt  = server time the talk starts
---   EHMartyTalkSet = 1 for the first talk, 2 for any talk after that
+--   EHMartyTalkSet = spot + 1 for the first talk there, spot + 2 after that (Gate1, Gate2, L51, L52)
 -- MartyNPC reads M.State() to turn Marty towards that player while they talk.
 -- R34 scope: Marty is in his normal form. He is friendly and he does not catch or chase anyone.
 local RunService = game:GetService('RunService')
@@ -14,15 +14,26 @@ local Players = game:GetService('Players')
 local CS = game:GetService('CollectionService')
 
 local M = {}
+-- (R36) one set per spot and talk: <TalkSets attribute on the Marty model><1 first talk | 2 any later talk>.
+-- Gate = just inside the works gate. L5 = waiting outside the lift on Level 5 (he got there first).
 M.Sets = {
-	[1] = {
+	Gate1 = {
 		{who = 'him', text = "There you are! You must be the new hire. Martin Voss, maintenance. Everyone calls me Marty."},
 		{who = 'you', text = "Hi, I'm {name}. Nice to meet you."},
 		{who = 'him', text = "Good to have you, {name}. Follow the road up to the shaft hall. The lift's inside."},
 		{who = 'him', text = "Take it down when you're ready. I'll meet you on Level Five."},
 	},
-	[2] = {
+	Gate2 = {
 		{who = 'him', text = "Don't mind the smell. After a while you stop noticing it."},
+	},
+	L51 = {
+		{who = 'him', text = "There you are. Told you I'd be here."},
+		{who = 'you', text = "How did you get down here before us?"},
+		{who = 'him', text = "Service stairs. Faster than that old lift."},
+		{who = 'him', text = "Start with the leaking pipe down the hall. Close the valve before the pressure climbs."},
+	},
+	L52 = {
+		{who = 'him', text = "Go on. I'll be right here."},
 	},
 }
 M.Speakers = {him = 'Marty', you = '{name}'}
@@ -74,9 +85,17 @@ function M.State()
 end
 
 local function findMarty()
+	-- (R36) the nearest Marty in the world (the gate one and the Level 5 one never share a scene, but be sure)
+	local me = Players.LocalPlayer
+	local root = me and me.Character and me.Character:FindFirstChild('HumanoidRootPart')
+	local best, bd = nil, math.huge
 	for _, m in CS:GetTagged('MartyNPC') do
-		if m:IsDescendantOf(workspace) then return m end
+		if m:IsDescendantOf(workspace) and m.PrimaryPart then
+			local d = root and (m.PrimaryPart.Position - root.Position).Magnitude or 0
+			if d < bd then best, bd = m, d end
+		end
 	end
+	return best
 end
 M.FindMarty = findMarty
 
@@ -153,7 +172,7 @@ function M.Start()
 		end
 		local n = utf8.len(line.ContentText) or #line.Text
 		line.MaxVisibleGraphemes = (k >= 1) and -1 or math.floor(n * k + .5)
-		local b = smooth((t - first.shown) / .3) * smooth((last.finish - t) / .4)
+		local b = smooth((t - first.shown) / .3) * smooth((last.finish - t) / .8) -- (R36) a slower, clearly visible fade out once the talk is done
 		box.GroupTransparency = 1 - b
 		box.Position = boxPos -- fades in place, as Hale's does (Nov 8)
 		local a = smooth((t - tl.shown) / M.FadeIn) * smooth((tl.finish - t) / M.FadeOut)

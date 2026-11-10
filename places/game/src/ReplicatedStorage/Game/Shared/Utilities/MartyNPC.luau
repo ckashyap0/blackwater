@@ -104,15 +104,33 @@ function M.Start()
 			local talk = Talk and Talk.State()
 			local now = os.clock()
 			-- face whoever on this screen is talking to him, then back to his place
+			-- (R36) like a person: the head turns to you first; the body follows a beat later and more slowly,
+			-- and only when the head alone can't cover the angle (it keeps the last few degrees itself)
 			local targetYaw = s.baseYaw
 			local root = player.Character and player.Character:FindFirstChild('HumanoidRootPart')
-			if talk and root then s.holdUntil = now + 1.5 end
-			if root and now < s.holdUntil then
+			local near = root and (root.Position - s.mesh.Position).Magnitude < 25
+			if talk and root and near then s.holdUntil = now + 1.5 end
+			local engaged = root and near and now < s.holdUntil
+			if engaged then
 				local d = root.Position - s.mesh.Position
 				if Vector3.new(d.X, 0, d.Z).Magnitude > .5 then targetYaw = yawOf(Vector3.new(d.X, 0, d.Z)) end
 			end
-			s.yaw, s.vyaw = spring(s.yaw, s.vyaw, s.yaw + wrap(targetYaw - s.yaw), 5, dt)
+			local diff = wrap(targetYaw - s.yaw)
+			local bodyGoal = s.yaw
+			if not engaged then
+				bodyGoal = s.baseYaw; s.turnAt = nil
+			elseif math.abs(diff) > math.rad(35) then
+				s.turnAt = s.turnAt or (now + .35)
+				if now >= s.turnAt then bodyGoal = targetYaw - math.sign(diff) * math.rad(12) end
+			elseif math.abs(diff) < math.rad(14) then
+				s.turnAt = nil
+			end
+			if s.turnAt and now >= s.turnAt then bodyGoal = targetYaw - math.sign(diff) * math.rad(12) end
+			s.yaw, s.vyaw = spring(s.yaw, s.vyaw, s.yaw + wrap(bodyGoal - s.yaw), 2.6, dt)
 			s.yaw = wrap(s.yaw)
+			local headGoal = engaged and math.clamp(wrap(targetYaw - s.yaw), math.rad(-60), math.rad(60)) or 0
+			s.head = s.head or 0; s.vhead = s.vhead or 0
+			s.head, s.vhead = spring(s.head, s.vhead, headGoal, 7, dt)
 			if math.abs(wrap(s.yaw - s.lastYaw)) > 1e-4 then
 				s.lastYaw = s.yaw
 				s.model:PivotTo(CFrame.new(s.base.Position) * CFrame.Angles(0, s.yaw, 0) * s.offset)
@@ -125,9 +143,18 @@ function M.Start()
 					if b then b.Transform = sample(tr, t) end
 				end
 			end
-			-- a small, slow head movement while he speaks
-			s.nod, s.vnod = spring(s.nod, s.vnod, (talk and talk.speaking) and 1 or 0, 6, dt)
 			local head = s.bones.Head
+			-- (the turn and nod build on this frame's idle pose; with no idle key for the head, start from rest
+			-- each frame so nothing adds up)
+			if head and not (s.length > 0 and s.tracks.Head) then head.Transform = CFrame.identity end
+			-- (R36) the head's own turn, applied about the world vertical through the head bone
+			if head and math.abs(s.head) > 1e-3 and head.Parent and head.Parent:IsA('Bone') then
+				local P = head.Parent.WorldCFrame * head.CFrame
+				local W = P * head.Transform
+				head.Transform = P:Inverse() * (CFrame.new(W.Position) * CFrame.Angles(0, s.head, 0) * W.Rotation)
+			end
+			-- a small, slow head movement while he speaks
+			s.nod, s.vnod = spring(s.nod, s.vnod, (talk and talk.speaking and near) and 1 or 0, 6, dt)
 			if head and s.nod > .001 then
 				local a = math.rad(2) * s.nod
 				head.Transform = head.Transform * CFrame.Angles(a * math.sin(now * 3.1), a * .7 * math.sin(now * 1.7), 0)

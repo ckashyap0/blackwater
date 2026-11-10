@@ -734,6 +734,7 @@ function Controller:Start()
  pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.CheckInTalk).Start()end) -- (Nov 2) check-in conversation box (StarterGui.CheckInTalk)
  pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.MartyNPC).Start()end) -- (R34) Marty at the works gate: idle clip, turns to whoever talks to him
  pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.MartyTalk).Start()end) -- (R34) talking to Marty (StarterGui.MartyTalk, same look as Hale's)
+ pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.DropFall).Start()end) -- (R36) other players' dropped keycard falls smoothly on this screen
   task.spawn(function()
    while self._scope do
     local runtime=workspace:FindFirstChild('Runtime');local env=runtime and runtime:FindFirstChild('DescentEnvironment')

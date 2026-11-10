@@ -839,36 +839,50 @@ function Service:_CheckpointHandles(yard)
 	end
 	-- (R34, R35) Marty just inside the works gate: hold E (TALK) for a short talk on your own screen
 	-- (Utilities.MartyTalk). It switches on once the crew has driven through the barrier (GateDriveDone).
-	local marty=nil
-	for _,m in CS:GetTagged("MartyNPC")do if m:IsDescendantOf(yard) then marty=m;break end end
-	if marty and marty.PrimaryPart then
-		local t=Instance.new("Part");t.Name="MartyTalk";t.Anchored=true;t.CanCollide=false;t.CanTouch=false;t.CanQuery=true
-		local bcf,bsz=marty:GetBoundingBox()
-		t.Transparency=1;t.CastShadow=false;t.Size=Vector3.new(math.max(bsz.X,2.5),bsz.Y,math.max(bsz.Z,2.5));t.CFrame=bcf
-		t.Parent=marty
-		local ready=not yard:GetAttribute("ArrivalCar") or yard:GetAttribute("GateDriveDone")==true
-		holdTarget(t,"MartyTalk","TALK",.3,10,ready,"MartyTalk")
-		if not ready then
-			local c;c=yard:GetAttributeChangedSignal("GateDriveDone"):Connect(function()
-				if yard:GetAttribute("GateDriveDone") and t.Parent then t:SetAttribute("EHInteractionEnabled",true);c:Disconnect() end
-			end)
-			self._scope:Add(c)
+	for _,m in CS:GetTagged("MartyNPC")do
+		if m:IsDescendantOf(yard) then
+			local ready=not yard:GetAttribute("ArrivalCar") or yard:GetAttribute("GateDriveDone")==true
+			local t=self:_MartyHandle(m,ready)
+			if t and not ready then
+				local c;c=yard:GetAttributeChangedSignal("GateDriveDone"):Connect(function()
+					if yard:GetAttribute("GateDriveDone") and t.Parent then t:SetAttribute("EHInteractionEnabled",true);c:Disconnect() end
+				end)
+				self._scope:Add(c)
+			end
 		end
 	end
 end
+-- (R36) the TALK target on any Marty (the gate one above, and the one waiting on Level 5 when that floor is
+-- built at run time: see the MartyNPC watcher in Start). One invisible box around him.
+function Service:_MartyHandle(marty,ready)
+	if not marty.PrimaryPart or marty:FindFirstChild("MartyTalk") then return nil end
+	local t=Instance.new("Part");t.Name="MartyTalk";t.Anchored=true;t.CanCollide=false;t.CanTouch=false;t.CanQuery=true
+	local bcf,bsz=marty:GetBoundingBox()
+	t.Transparency=1;t.CastShadow=false;t.Size=Vector3.new(math.max(bsz.X,2.5),bsz.Y,math.max(bsz.Z,2.5));t.CFrame=bcf
+	t.Parent=marty
+	holdTarget(t,"MartyTalk","TALK",.3,10,ready,"MartyTalk")
+	return t
+end
 function Service:_OnMartyTalk(player)
-	local b=self._boarding;local yard=self._yard
-	if not b or b.closing or not yard then return end
-	if yard:GetAttribute("ArrivalCar") and not yard:GetAttribute("GateDriveDone") then return end
-	local t=yard:FindFirstChild("MartyTalk",true);local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	if not t or not root or (root.Position-t.Position).Magnitude>16 then return end
+	local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart");if not root then return end
+	-- the nearest Marty whose TALK is on, within reach
+	local best,bd=nil,16
+	for _,m in CS:GetTagged("MartyNPC")do
+		local t=m:IsDescendantOf(workspace) and m:FindFirstChild("MartyTalk")
+		if t and t:GetAttribute("EHInteractionEnabled")==true then
+			local d=(root.Position-t.Position).Magnitude;if d<=bd then best,bd=m,d end
+		end
+	end
+	if not best then return end
 	local okM,Talk=pcall(require,game.ReplicatedStorage.Game.Shared.Utilities.MartyTalk)
 	if not okM then return end
+	local spot=best:GetAttribute("TalkSets") or "Gate"
 	local now=workspace:GetServerTimeNow()
 	local at,set=player:GetAttribute("EHMartyTalkAt"),player:GetAttribute("EHMartyTalkSet")
 	if type(at)=="number" and now<at+Talk.Duration(set)-.3 then return end -- still talking
-	player:SetAttribute("EHMartyTalkSet",player:GetAttribute("EHMartyTalked") and 2 or 1)
-	player:SetAttribute("EHMartyTalked",true)
+	local key="EHMartyTalked"..spot
+	player:SetAttribute("EHMartyTalkSet",spot..(player:GetAttribute(key) and "2" or "1"))
+	player:SetAttribute(key,true)
 	player:SetAttribute("EHMartyTalkAt",now)
 end
 function Service:_OnStallCheckIn(player)
@@ -997,7 +1011,7 @@ end
 function Service:_EndBoarding()
 	if self._surfaceCard then pcall(function()self._inventory:RetireFloor("Surface")end);self._surfaceCard=nil end
 	self._boarding=nil
-	for _,p in self._players:GetPlayers()do if typeof(p)=="Instance" and p:IsA("Player") then p:SetAttribute("EHInCar",nil);p:SetAttribute("EHCarSeat",nil);p:SetAttribute("EHKeycard",nil);p:SetAttribute("EHSurfaceKit",nil);p:SetAttribute("EHMartyTalkAt",nil);p:SetAttribute("EHMartyTalkSet",nil);p:SetAttribute("EHMartyTalked",nil) end end
+	for _,p in self._players:GetPlayers()do if typeof(p)=="Instance" and p:IsA("Player") then p:SetAttribute("EHInCar",nil);p:SetAttribute("EHCarSeat",nil);p:SetAttribute("EHKeycard",nil);p:SetAttribute("EHSurfaceKit",nil);p:SetAttribute("EHMartyTalkedGate",nil) end end
 	for _,p in self._players:GetPlayers()do if typeof(p)=="Instance" and p:IsA("Player") then p.RespawnLocation=self._environment.Spawn end end
 	if self._yard then self._yard:Destroy();self._yard=nil end
 	self._cabin:SetAttribute("Boarding",nil);self._cabin:SetAttribute("ArrivalCar",nil);if self._players==Players then game.ReplicatedStorage.Game:SetAttribute("SurfaceBoarding",nil) end
@@ -1274,6 +1288,17 @@ function Service:Start()
 	end
 	if self._players==Players then
 		self._scope:Add(Players.PlayerAdded:Connect(watch));for _,p in Players:GetPlayers()do watch(p)end
+		-- (R36) a Marty placed on a floor (Level 5: waiting outside the lift) gets his TALK target when that floor
+		-- is built in Runtime. The gate Marty (TalkSets "Gate") is set up by _CheckpointHandles instead.
+		local function onMarty(m)
+			if (m:GetAttribute("TalkSets") or "Gate")=="Gate" then return end
+			task.defer(function()
+				local runtime=workspace:FindFirstChild("Runtime")
+				if runtime and m:IsDescendantOf(runtime) then pcall(self._MartyHandle,self,m,true) end
+			end)
+		end
+		self._scope:Add(CS:GetInstanceAddedSignal("MartyNPC"):Connect(onMarty))
+		for _,m in CS:GetTagged("MartyNPC")do onMarty(m) end
 		-- hold-E on the main gate (see _GateHandle)
 		local network=game.ReplicatedStorage.Game:FindFirstChild("Network")
 		if network then

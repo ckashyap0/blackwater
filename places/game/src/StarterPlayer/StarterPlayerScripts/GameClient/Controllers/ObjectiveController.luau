@@ -33,6 +33,18 @@ function Controller:Init(deps)
   if d:IsA('UIStroke')then table.insert(self._fadeParts,{d,'Transparency',d.Transparency})end
  end
  local scale,releaseScale=HudScale.Attach(frame,{referenceSize=Vector2.new(960,600),min=.6,max=1.15,consoleBoost=1.15});self._scope:Add(releaseScale)
+ -- (R36) COLLAPSE: the chevron beside OBJECTIVE (authored TaskBar.Heading.Toggle) folds the objective lines
+ -- away and brings them back; tap it on mobile, click it or press O on a computer. It starts open, and a
+ -- player's choice holds for the rest of the session (player attribute EHObjectiveCollapsed).
+ local toggle=frame:FindFirstChild('Heading') and frame.Heading:FindFirstChild('Toggle')
+ self._toggle=toggle;self._chevron=toggle and toggle:FindFirstChild('Chevron')
+ self._expand=self._player:GetAttribute('EHObjectiveCollapsed') and 0 or 1
+ local function flip() self._player:SetAttribute('EHObjectiveCollapsed',not self._player:GetAttribute('EHObjectiveCollapsed') or nil) end
+ if toggle then self._scope:Add(toggle.Activated:Connect(flip)) end
+ self._scope:Add(game:GetService('UserInputService').InputBegan:Connect(function(io,gp)
+  if gp or io.KeyCode~=Enum.KeyCode.O or not self._screen.Enabled then return end
+  flip()
+ end))
  -- (no on-screen pointer: the white outlines are the only task markers)
  self._marks={}
  self._scope:Add(game.GuiService.MenuOpened:Connect(function()self._menu=true end));self._scope:Add(game.GuiService.MenuClosed:Connect(function()self._menu=false end))
@@ -46,7 +58,7 @@ end
 --  * the stand-in never streams in or out, changes or flickers, so the outline is rock steady.
 -- Each object keeps its outline for as long as it is a target, fading in and out softly.
 local RunService=game:GetService('RunService')
-local OUTLINE_T=.22       -- outline transparency when fully shown (a lighter, finer-looking line)
+local OUTLINE_T=.08       -- (R36) outline transparency when fully shown: a firm, clear line, through walls too
 local INSET=.012          -- studs: how far each stand-in face sits inside the real one (a fixed hair, not a
                           -- share of the size - scaling every piece about its own centre opened little gaps
                           -- between touching pieces, which showed as notches and steps in the line)
@@ -218,16 +230,9 @@ function Controller:_DrawOutlines(dt)
    -- (full strength from ~10 studs, fading to nothing within ~4)
    local cam=workspace.CurrentCamera;local near=1
    local ref=(mk.parts[1] and mk.parts[1].copy) or (obj:IsA('BasePart') and obj)
-   if cam and ref then local u=math.clamp(((cam.CFrame.Position-ref.Position).Magnitude-4)/6,0,1);near=u*u*(3-2*u) end
-   if mk.ring and cam then
-    -- is a wall between you and the wheel? (eased, so walking past a pillar never blinks it)
-    local o=cam.CFrame.Position;local to=obj.Position-o
-    local rp=RaycastParams.new();rp.FilterType=Enum.RaycastFilterType.Exclude;rp.RespectCanCollide=true
-    rp.FilterDescendantsInstances={folder(),obj.Parent or obj,self._player.Character}
-    local blocked=to.Magnitude>1 and workspace:Raycast(o,to-to.Unit*.6,rp)~=nil
-    mk.seen+=((blocked and 0 or 1)-mk.seen)*(1-math.exp(-math.clamp(dt,0,.1)*6))
-    near*=.45+.55*mk.seen
-   end
+   -- (R36) only fades when you are right on it (full strength from 5 studs): the owner wants it clear
+   if cam and ref then local u=math.clamp(((cam.CFrame.Position-ref.Position).Magnitude-2)/3,0,1);near=u*u*(3-2*u) end
+   -- (R36) the wheel rim stays full strength through walls too (it used to dim to 45% behind a wall)
    local t=1-(1-OUTLINE_T)*mk.alpha*near
    if math.abs(mk.h.OutlineTransparency-t)>.002 then mk.h.OutlineTransparency=t end
   end
@@ -299,7 +304,7 @@ function Controller:_Update()
     self._label.Text=message;if not same then self._textIn=os.clock() end -- (fades in smoothly: _FadeStep)
    end
    if self._side.Text~=side then self._side.Text=side;self._textIn=os.clock() end
-  local showSide=side~=''
+  local showSide=side~='' and (self._expand or 1)>.02 -- (folded away: _FadeStep shows it again on opening)
   if self._side.Visible~=showSide then self._side.Visible=showSide end
  end
  -- Dropped items ALWAYS keep their white outline (through walls), whatever the current task is.
@@ -351,6 +356,19 @@ end
 -- every frame: the task bar's fade-in with the rest of the HUD, and a new objective's own fade
 function Controller:_FadeStep()
  if not self._fadeParts then return end
+ -- (R36) folding the lines away and back: a short eased fade, then the lines leave the list so the bar shrinks
+ local want=self._player:GetAttribute('EHObjectiveCollapsed') and 0 or 1
+ local dt=math.min(1/20,os.clock()-(self._lastFold or os.clock()));self._lastFold=os.clock()
+ self._expand=self._expand or want
+ if self._expand~=want then
+  local step=dt/.22;self._expand=want>self._expand and math.min(want,self._expand+step) or math.max(want,self._expand-step)
+ end
+ local open=self._expand>.02
+ if self._label.Visible~=open then self._label.Visible=open end
+ local sideOn=open and self._side.Text~=''
+ if self._side.Visible~=sideOn then self._side.Visible=sideOn end
+ local e=self._expand;e=e*e*(3-2*e) -- (eased both ways, no bounce)
+ if self._chevron then local r=180*(1-e);if self._chevron.Rotation~=r then self._chevron.Rotation=r end end -- (points up when open, down when folded)
  local a=1
  if Reveal.Active() or self._revealing then a=Reveal.Alpha();self._revealing=Reveal.Active() end
  local k=1
@@ -361,7 +379,7 @@ function Controller:_FadeStep()
  for _,f in self._fadeParts do
   local obj,prop,base=f[1],f[2],f[3]
   local w=a
-  if prop=='TextTransparency' and (obj==self._label or obj==self._side) then w=a*k end
+  if prop=='TextTransparency' and (obj==self._label or obj==self._side) then w=a*k*e end
   local v=1-(1-base)*w
   if obj[prop]~=v then obj[prop]=v end
  end

@@ -319,6 +319,9 @@ function Controller:_View(dt,camera,b)
     -- copy is what is drawn in front of the lens
     local view=Instance.new('Model');view.Name='HeldObjectiveView'
     local copy=self._carryTool:Clone();copy.Parent=view;view.PrimaryPart=copy
+    -- (R36) the keycard's authored pivot is turned 90 degrees (it lay flat in your view): place the copy by its
+    -- own centre, so a flat card stands up in your hand like a real one (owner's reference: upright, no hands)
+    if self._carryFlat then copy.PivotOffset=CFrame.identity end
     view:ScaleTo(HeldMotion.Near*(part:GetAttribute('HeldViewScale') or 1));self._carryView=view;self._carryDrop=part:GetAttribute('HeldViewDrop') -- (an item can ask to be drawn a little bigger in the hand: HeldViewScale)
     break
    end
@@ -339,6 +342,7 @@ function Controller:_View(dt,camera,b)
   local desktop=game:GetService('UserInputService').PreferredInput==Enum.PreferredInput.KeyboardAndMouse
   local world=camera.CFrame*float*HeldMotion.CarryPose(self._carryTool.Size,aspect,camera.FieldOfView,amount,desktop and HeldMotion.DesktopCarrySpread or nil)
   do local drop=self._carryDrop;if drop then world=world-camera.CFrame.UpVector*drop end end -- (an item can sit a little lower in the hand: HeldViewDrop)
+  if self._carryFlat then world=world*CFrame.Angles(math.rad(-6),math.rad(-14),math.rad(7)) end -- (R36) held upright, angled in a little, like a real card
    self._carryTool.CFrame=world
   if self._carryView then
    self._carryView:PivotTo(HeldMotion.Compress(camera.CFrame.Position,world))

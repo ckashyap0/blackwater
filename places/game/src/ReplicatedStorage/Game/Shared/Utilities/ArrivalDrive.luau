@@ -18,7 +18,30 @@ local M={}
 M.Lines={"I did not want to get up at 5 this morning.","On the bright side, I'm starting a new job today.","The place looked old and run down, but maybe that's just how water facilities are.","Better get going before I'm late."}
 -- (cruise: the first seconds of the drive, the car simply bowling along the highway seen from beside it)
 -- (the lines play one after another and SPACE skips to the next; the drive waits for the last one)
-local T={line1=.6,cps=32,lineHold=1.6,textFade=.6,lineGap=.2,driveAt=9.7,reveal=1.0,cruise=6,drive=14.3,park=1.0,fade=.8,fadeIn=1.1,outHold=2.4}
+local T={line1=.6,cps=26,lineHold=1.6,textFade=.6,lineGap=.2,driveAt=9.7,reveal=1.0,cruise=6,drive=14.3,park=1.0,fade=.8,fadeIn=1.1,outHold=2.4}
+-- (R36) TYPEWRITER: each letter lands on its own uneven beat (a person typing, not a ticker), with a short
+-- pause after punctuation, and a key strike for every letter (ProSoundEffects "Typewriter N (SFX)",
+-- 1920s Remington single strokes; only the first strike of each clip plays). A deeper strike ends each line.
+local TYPE_IDS={9120299319,9120299323,9120299407,9120299506,9120299508,9120299595,9120299677,9120299710,9120299736,9120299810,9120299839,9120299893,9120300060}
+local TYPE_VOL,TYPE_CLIP=.34,.16
+local function typeSchedule(line,seed)
+ local rng=Random.new(seed);local at,t={},0
+ for i=1,#line do
+  local prev=i>1 and string.sub(line,i-1,i-1) or ''
+  local dt=(1/T.cps)*(.6+rng:NextNumber()*.9)
+  if prev=='.' or prev==',' or prev=='?' or prev=='!' then dt+=.24 elseif prev==' ' then dt+=.03 end
+  t+=dt;at[i]=t
+ end
+ return {at=at,total=t}
+end
+local typeRng=Random.new()
+local function typeStrike(soft,speed)
+ local s=Instance.new('Sound');s.SoundId='rbxassetid://'..TYPE_IDS[typeRng:NextInteger(1,#TYPE_IDS)]
+ s.Volume=TYPE_VOL*(soft and .55 or 1)*(.85+typeRng:NextNumber()*.3);s.PlaybackSpeed=(speed or 1)*(.94+typeRng:NextNumber()*.12)
+ s.PlaybackRegionsEnabled=true;s.PlaybackRegion=NumberRange.new(0,TYPE_CLIP)
+ s.Parent=game:GetService('SoundService');s:Play();task.delay(.8,function()s:Destroy()end)
+end
+M.TypeStrike=typeStrike
 local DRIVE_END=T.driveAt+T.cruise+T.drive
 local FADE_AT=DRIVE_END+T.park
 M.Total=FADE_AT+T.fade
@@ -133,7 +156,8 @@ local function copyCar(orig,folder)
  local copy=orig:Clone();copy.Name='ArrivalDriveCar';copy.Parent=folder
  local parts={}
  for _,d in copy:GetDescendants()do
-  if d:IsA('BasePart') then d.CastShadow=false;d.CanCollide=false;d.CanQuery=false;d.CanTouch=false;local lc=d:GetAttribute('CarLocal');if lc then table.insert(parts,{p=d,l=lc}) end end
+  -- (R36) the car casts its shadow again (owner: "add back the light beams/shadows for the car")
+  if d:IsA('BasePart') then d.CanCollide=false;d.CanQuery=false;d.CanTouch=false;local lc=d:GetAttribute('CarLocal');if lc then table.insert(parts,{p=d,l=lc}) end end
  end
  for _,n in {'Collision','CarGetIn'} do local c=copy:FindFirstChild(n);if c then c:Destroy() end end
  local axle={}
@@ -149,7 +173,9 @@ end
 -- (Nov 8) ONE light per lamp: the road pool only (the SpotLight lagged behind the car and the three stacked layers
 -- read as three separate lights). The pool starts right under the lamp and is built from many thin, very faint
 -- layers, so it reads as one soft pool with no visible edges or source.
-local POOL={start=.25,len=30,spread=1.4,w0=1.6,w1=12,y=.08,spot=0,bright=1,layers={}}
+-- (R36) the real headlights are back (spot=1, with shadows), plus a faint cone of light through the rain (CONE)
+local POOL={start=.25,len=30,spread=1.4,w0=1.6,w1=12,y=.08,spot=1,bright=.8,layers={}}
+local CONE={len=26,w0=.5,w1=7,t0=.88,drop=-.06}
 for i=1,10 do table.insert(POOL.layers,{w=1-(i-1)*.075,t=.975}) end
 local function roadPools(copy)
  local out={}
@@ -160,7 +186,10 @@ local function roadPools(copy)
    local rig=att.Parent;local lc=rig:GetAttribute('CarLocal') or CFrame.identity -- the rig's place in the car frame
    local p=lc*att.Position -- (car frame: forward is -Z, the road is at Y = 0)
    local spot=att:FindFirstChildOfClass('SpotLight')
-   if spot then spot.Brightness*=POOL.spot;if POOL.spot<=0 then spot.Enabled=false end end
+   if spot then
+    spot.Brightness*=POOL.spot
+    if POOL.spot<=0 then spot.Enabled=false else spot.Enabled=true;spot.Shadows=true end
+   end
    local col=spot and spot.Color or Color3.fromRGB(255,240,214)
    local side=p.X>=0 and 1 or -1
    local inv=lc:Inverse()
@@ -174,6 +203,14 @@ local function roadPools(copy)
     b.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(.12,ly.t),NumberSequenceKeypoint.new(.65,ly.t+(1-ly.t)*.45),NumberSequenceKeypoint.new(1,1)})
     b.Parent=rig;out[b]=b.Brightness
    end
+   -- (R36) the visible beam: a soft cone from the lamp, tipped slightly down, that faces the camera
+   local c0=Instance.new('Attachment');c0.Name='HeadCone0';c0.CFrame=inv*CFrame.new(p.X,p.Y,p.Z-.2);c0.Parent=rig
+   local c1=Instance.new('Attachment');c1.Name='HeadCone1';c1.CFrame=inv*CFrame.new(p.X+side*.8,p.Y+CONE.drop*CONE.len,p.Z-CONE.len);c1.Parent=rig
+   local cb=Instance.new('Beam');cb.Name='HeadCone';cb.Attachment0=c0;cb.Attachment1=c1
+   cb.FaceCamera=true;cb.Segments=1;cb.Width0=CONE.w0;cb.Width1=CONE.w1
+   cb.LightEmission=1;cb.LightInfluence=0;cb.Brightness=1;cb.Color=ColorSequence.new(col)
+   cb.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,CONE.t0),NumberSequenceKeypoint.new(.5,CONE.t0+(1-CONE.t0)*.5),NumberSequenceKeypoint.new(1,1)})
+   cb.Parent=rig;out[cb]=cb.Brightness
   end
  end
  return out
@@ -328,7 +365,7 @@ local function lampShadows(yard,quiet)
   if not yard then return end
   table.clear(yardLights)
   for _,l in yard:GetDescendants()do if (l:IsA('SpotLight') or l:IsA('PointLight') or l:IsA('SurfaceLight')) then
-   if l.Shadows then l.Shadows=false;quieted[l]=true end
+   -- (R36) lamp shadows stay on so the moving car casts a shadow (owner asked for the shadows back)
    local p=l.Parent;if not (p:GetAttribute('BlinkRate') or p:GetAttribute('GateStatus') or p:GetAttribute('Flicker')) then table.insert(yardLights,l) end
   end end
  else
@@ -366,11 +403,12 @@ function M.Play(opts)
  -- (Nov 4) the look is authored in StarterGui.ArrivalText (Line, SkipPrompt): same font and fixed size as the talk
  -- box; a long line wraps onto the next line, still centred (never shrinks)
  local tpl=player:WaitForChild('PlayerGui'):WaitForChild('ArrivalText',5) or game.StarterGui:FindFirstChild('ArrivalText')
- local lines={}
+ local lines,sched={},{}
  for i=1,#M.Lines do
   local l=tpl.Line:Clone();l.Name='Line'..i;l.Text='';l.Parent=gui
-  lines[i]=l
+  lines[i]=l;sched[i]=typeSchedule(M.Lines[i],i*97+11)
  end
+ local typedN,lineReturned=0,false
  local linePos=lines[1].Position
  if opts.cover then task.defer(function()if opts.cover.Parent then opts.cover:Destroy() end end) end
  player:SetAttribute('EHCinematic',true)
@@ -476,10 +514,20 @@ function M.Play(opts)
    local t=os.clock()-base
    if not textDone then
     local tx=os.clock()-txBase;local line=M.Lines[cur]
-    lineEnd=lineEnd or (lineStart+#line/T.cps+T.lineHold)
+    local sc=sched[cur]
+    if not lineEnd then lineEnd=lineStart+sc.total+T.lineHold;typedN,lineReturned=0,false end
     if skipReq then skipReq=false;if tx>=lineStart then lineEnd=math.min(lineEnd,tx) end end
     for i,l in lines do l.Visible=i==cur and tx>=lineStart end
-    local l=lines[cur];local n=math.clamp(math.floor((tx-lineStart)*T.cps),0,#line)
+    local l=lines[cur];local n=0
+    while n<#line and sc.at[n+1]<=tx-lineStart do n+=1 end
+    if tx>=lineEnd then n=typedN end -- (skipped: no more letters land while it fades)
+    if n>typedN then
+     -- one strike per letter that landed this frame (two at most, so a slow frame never machine-guns)
+     local strikes=0
+     for k=typedN+1,n do if strikes<2 then typeStrike(string.sub(line,k,k)==' ');strikes+=1 end end
+     typedN=n
+    end
+    if n>=#line and not lineReturned then lineReturned=true;task.delay(.12,function()typeStrike(false,.78)end) end
     l.Text=string.sub(line,1,n)..'<font transparency="1">'..string.sub(line,n+1)..'</font>'
     -- each line types in, holds, then fades out while drifting gently down (eased, no snap)
     local out=tx<lineEnd and 0 or smooth((tx-lineEnd)/T.textFade)
@@ -561,6 +609,9 @@ function M.PlayGate(opts)
   for _=1,30 do local mid=(lo+hi)/2;if sAtU(mid)<switchS then lo=mid else hi=mid end end
   tSwitch=G.driveAt+lo*G.drive
  end
+ -- (R36) where the crane starts: just before the car leaves the access road for the car park
+ local sTurn=L*.6
+ for k=0,L,1 do if path:pos(k).Z>=-314 then sTurn=k;break end end
  local folder=Instance.new('Folder');folder.Name='ArrivalDriveLocal';folder.Parent=workspace
  lampShadows(yard,true)
  local copy,parts=copyCar(orig,folder)
@@ -587,7 +638,6 @@ function M.PlayGate(opts)
  local armSound
  local sfxDone={}
 local G1,G1b=Vector3.new(-6.8,105.4,-359.5)+DY,Vector3.new(-6.2,105.0,-361.5)+DY -- (the whole arm across the frame, the car behind it)
- local LOT0,LOT1=Vector3.new(-37,110.5,-262.5)+DY,Vector3.new(-34,109.5,-265)+DY
  local camPos,camLook,steer,lastShot=nil,nil,0,nil
  local done=false
  local conn
@@ -663,10 +713,15 @@ local ak=smoother((t-G.armAt)/G.armLen)
    local gateMid=Vector3.new(1.5,104.0,-373)+DY
    wantLook=gateMid:Lerp(target,smooth((t-G.armAt)/(G.driveAt+1.5-G.armAt)))
   else
-   -- (Oct 25) no chasing the car round its turns: one slow, steady drift toward the bay till the end
-    G._lookA=G._lookA or target
-    local q=math.clamp((t-tSwitch)/(G.FADE_AT-tSwitch),0,1)
-    wantPos=LOT0:Lerp(LOT1,.6*q);wantLook=G._lookA:Lerp(endCF.Position+Vector3.new(0,2,0),1-(1-q)^1.5)
+   -- (R36) third person, theatrical: a low camera trails the car up the access road with the headlights
+   -- cutting the rain ahead, then cranes up and out as it turns into the facility and parks.
+   local fwd=cf.LookVector
+   local chasePos=cf.Position-fwd*12+Vector3.new(0,2.4,0)
+   local chaseLook=cf.Position+fwd*10+Vector3.new(0,1.4,0)
+   local k=smoother((s-sTurn)/math.max(L-sTurn,1))
+   local cranePos=endCF.Position+Vector3.new(14,18,-14)
+   wantPos=chasePos:Lerp(cranePos,k);wantLook=chaseLook:Lerp(target,k)
+   camera.FieldOfView=48+12*k
   end
   if shot~=lastShot or not camPos then camPos,camLook=wantPos,wantLook;lastShot=shot end
   camPos=camPos:Lerp(wantPos,1-math.exp(-dt*10));camLook=camLook:Lerp(wantLook,1-math.exp(-dt*7))

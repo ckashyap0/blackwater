@@ -183,7 +183,17 @@ function Service:Pickup(player,id,given)
 	clone.Size=entry.part.Size
 	local grip=hand:FindFirstChild("LeftGripAttachment",true)
 	local gripFrame=grip and grip:IsA("Attachment")and grip.WorldCFrame or hand.CFrame
-	clone.CFrame=HeldMotion.GetCarryFrame(clone,gripFrame,CFrame.new(0,-.65,0));clone.Parent=character
+	clone.CFrame=HeldMotion.GetCarryFrame(clone,gripFrame,CFrame.new(0,-.65,0))
+	if entry.part:GetAttribute("DropFlat") then
+		-- (R36) a card is held upright in the hand for everyone watching: standing, printed side facing out,
+		-- the bottom third in the grip (it used to lie flat along the forearm)
+		local root=character:FindFirstChild("HumanoidRootPart")
+		local look=root and Vector3.new(root.CFrame.LookVector.X,0,root.CFrame.LookVector.Z) or Vector3.new(0,0,-1)
+		if look.Magnitude<.05 then look=Vector3.new(0,0,-1) end
+		local at=gripFrame.Position
+		clone.CFrame=CFrame.lookAt(at,at+look.Unit)*CFrame.new(0,clone.Size.Y*.3,-.06)*CFrame.Angles(math.rad(-8),0,math.rad(6))
+	end
+	clone.Parent=character
 	local weld=Instance.new("WeldConstraint");weld.Part0=hand;weld.Part1=clone;weld.Parent=clone;entry.carry=clone
 	player:SetAttribute("EHCarriedItem",id);player:SetAttribute("EHCarriedKind",self._inventory:Get(id).kind)
 	self:_Publish(entry);return true,"PickedUp"
@@ -212,7 +222,13 @@ function Service:Drop(player,clientFrame)
 	if entry.part:GetAttribute("DropFlat") then
 		-- (Nov 3) a flat item (the site keycard) is not thrown: it drops straight down and lies face up, the
 		-- printed side showing - never tumbling, landing on its edge or flipping over
-		self:_Publish(entry,self:_FlatRest(player,entry,(release or frame).Position) or frame)
+		local from=release or frame
+		local rest=self:_FlatRest(player,entry,from.Position) or frame
+		self:_Publish(entry,rest);entry.part:SetAttribute("EHFallTo",rest)
+		-- (R36) every other screen plays the same short fall from the hand to this resting spot
+		-- (Utilities.DropFall); the dropping screen already shows its own fall (EquipmentController ghost)
+		entry.part:SetAttribute("EHFallFrom",from);entry.part:SetAttribute("EHFallBy",player.UserId)
+		entry.part:SetAttribute("EHFallAt",workspace:GetServerTimeNow())
 	elseif release then self:_Toss(entry,release,velocity,frame,trusted and player or nil) else self:_Publish(entry,frame) end
 	player:SetAttribute("EHCarriedItem",nil);player:SetAttribute("EHCarriedKind",nil)
 	return true,"Dropped"
