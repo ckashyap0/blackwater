@@ -149,7 +149,7 @@ function M.Start()
 			if head and not (s.length > 0 and s.tracks.Head) then head.Transform = CFrame.identity end
 			-- (R36) the head's own turn, applied about the world vertical through the head bone
 			if head and math.abs(s.head) > 1e-3 and head.Parent and head.Parent:IsA('Bone') then
-				local P = head.Parent.WorldCFrame * head.CFrame
+				local P = head.Parent.TransformedWorldCFrame * head.CFrame -- (the torso as posed this frame)
 				local W = P * head.Transform
 				head.Transform = P:Inverse() * (CFrame.new(W.Position) * CFrame.Angles(0, s.head, 0) * W.Rotation)
 			end
