@@ -1,6 +1,6 @@
 --!nonstrict
--- R34 (Nov 9): Marty on the red square outside the works gate ("MartyNPC" tag, model imported from
--- Downloads/BlackWaterModels/Marty/Marty_v3.fbx, R15 bone rig). Runs on each client, like FrontDeskNPC.
+-- R34 (Nov 9), R35: Marty just inside the works gate ("MartyNPC" tag; R35 model is M1 from the vault,
+-- Assets/Models/BW_Marty.fbx: six skinned parts on one R15 bone rig). Runs on each client, like FrontDeskNPC.
 --  IDLE: plays the Idle clip that came with the model (Anim_Idle, a KeyframeSequence inside the model) by sampling
 --    its poses straight onto the bones. No uploaded animation asset is needed, so it behaves the same in Studio
 --    and in the live game.
@@ -48,6 +48,15 @@ local function readClip(ks)
 		end
 	end
 	for _, tr in tracks do table.sort(tr, function(a, b) return a[1] < b[1] end) end
+	-- (R35) a clip exported with its own rig stores poses against that rig's rest (M1's Idle: 90 degrees on
+	-- the root, 180 on the limbs). Model attribute AnimRelativeToFirstFrame plays the motion relative to the
+	-- clip's first frame instead, which is his standing rest pose.
+	if ks.Parent and ks.Parent:GetAttribute('AnimRelativeToFirstFrame') then
+		for _, tr in tracks do
+			local inv = tr[1][2]:Inverse()
+			for _, k in tr do k[2] = inv * k[2] end
+		end
+	end
 	return tracks, length
 end
 local function sample(tr, t)
@@ -70,9 +79,12 @@ local function setup(model)
 	local bones = {}
 	for _, d in mesh:GetDescendants() do if d:IsA('Bone') then bones[d.Name] = d end end
 	local tracks, length = readClip(model:FindFirstChild('Anim_Idle'))
+	-- (R35) M1 is several skinned parts on one rig: turn the whole model about its root, not one part
 	local base = mesh.CFrame
 	local yaw = yawOf(base.LookVector)
-	return {mesh = mesh, bones = bones, tracks = tracks, length = length, base = base,
+	local upright = CFrame.new(base.Position) * CFrame.Angles(0, yaw, 0)
+	return {model = model, mesh = mesh, bones = bones, tracks = tracks, length = length, base = base,
+		offset = upright:ToObjectSpace(model:GetPivot()), lastYaw = yaw,
 		baseYaw = yaw, yaw = yaw, vyaw = 0, t0 = math.random() * 3, holdUntil = 0, nod = 0, vnod = 0}
 end
 
@@ -101,8 +113,10 @@ function M.Start()
 			end
 			s.yaw, s.vyaw = spring(s.yaw, s.vyaw, s.yaw + wrap(targetYaw - s.yaw), 5, dt)
 			s.yaw = wrap(s.yaw)
-			local want = CFrame.new(s.base.Position) * CFrame.Angles(0, s.yaw, 0)
-			if (want.LookVector - s.mesh.CFrame.LookVector).Magnitude > 1e-4 then s.mesh.CFrame = want end
+			if math.abs(wrap(s.yaw - s.lastYaw)) > 1e-4 then
+				s.lastYaw = s.yaw
+				s.model:PivotTo(CFrame.new(s.base.Position) * CFrame.Angles(0, s.yaw, 0) * s.offset)
+			end
 			-- idle clip on the bones
 			if s.length > 0 then
 				local t = (now + s.t0) % s.length

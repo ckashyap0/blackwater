@@ -837,7 +837,7 @@ function Service:_CheckpointHandles(yard)
 		t.Parent=car
 		holdTarget(t,"CarGetIn","GET IN",.5,7,false,"CarGetIn");t:SetAttribute("EHWholeModel",true)
 	end
-	-- (R34) Marty on the red square outside the works gate: hold E (TALK) for a short talk on your own screen
+	-- (R34, R35) Marty just inside the works gate: hold E (TALK) for a short talk on your own screen
 	-- (Utilities.MartyTalk). It switches on once the crew has driven through the barrier (GateDriveDone).
 	local marty=nil
 	for _,m in CS:GetTagged("MartyNPC")do if m:IsDescendantOf(yard) then marty=m;break end end

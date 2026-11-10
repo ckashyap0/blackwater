@@ -1,5 +1,5 @@
 --!nonstrict
--- R34 (Nov 9): talking to Marty on the red square outside the works gate. Same look and timing as the check-in
+-- R34 (Nov 9), R35: talking to Marty just inside the works gate (GatePlaza spot, his first appearance). Same look and timing as the check-in
 -- talk with Hale (Utilities.CheckInTalk): the authored StarterGui.MartyTalk panel is a copy of CheckInTalk, with the
 -- speaker's portrait on the left (your Roblox headshot / a still view of Marty's face in Portrait.NpcView), the
 -- name over the line and the line typing out.
@@ -18,8 +18,8 @@ M.Sets = {
 	[1] = {
 		{who = 'him', text = "There you are! You must be the new hire. Martin Voss, maintenance. Everyone calls me Marty."},
 		{who = 'you', text = "Hi, I'm {name}. Nice to meet you."},
-		{who = 'him', text = "Good to have you, {name}. The gate's right behind me. The keycard Hale gave you opens it."},
-		{who = 'him', text = "Take the lift down when you're ready. I'll meet you on Level Five."},
+		{who = 'him', text = "Good to have you, {name}. Follow the road up to the shaft hall. The lift's inside."},
+		{who = 'him', text = "Take it down when you're ready. I'll meet you on Level Five."},
 	},
 	[2] = {
 		{who = 'him', text = "Don't mind the smell. After a while you stop noticing it."},

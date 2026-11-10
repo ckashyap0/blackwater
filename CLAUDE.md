@@ -55,7 +55,7 @@ Paths are the same in both places unless marked.
 
 ### NPCs
 - Hale (gatehouse): `Utilities.FrontDeskNPC` + `Utilities.CheckInTalk`, panel `StarterGui.CheckInTalk`. One talk for the whole crew.
-- Marty (R34, red square `MartyMarker_Greeting` outside the works gate): tag `MartyNPC`, model in `SurfaceYard.19_MartyMarkers.MartyMarker_Greeting.Marty` (Marty_v3 import, asset 113922065630038). `Utilities.MartyNPC` samples `Anim_Idle` (a KeyframeSequence inside the model) onto the bones and turns him to the local talker. `Utilities.MartyTalk` plays per-player lines in `StarterGui.MartyTalk` (a copy of Hale's panel). Server: `ElevatorService:_OnMartyTalk`, TALK enabled after `GateDriveDone`. No catch or chase until the owner asks.
+- Marty (R34, R35): M1 model from the vault (`Assets/Models/BW_Marty.fbx`, asset 140524293243401), six skinned parts on one R15 rig, tag `MartyNPC`, at `SurfaceYard.19_MartyMarkers.MartyMarker_GatePlaza.Marty` just inside the works gate (his first appearance). Marker order: GatePlaza, ShaftHall, LiftLanding (beside the left lift post), then `Level5.MartyMarkers.MartyMarker_Level5Arrival`. Markers are invisible `MartyStand` parts; the red squares are gone. Stage textures: `ReplicatedStorage.MartyStages` (Skin/Outfit/Hair_Stage1-3, vault `Scripts/MartyStages.lua` convention). `Utilities.MartyNPC` samples `Anim_Idle` (a KeyframeSequence inside the model) onto the bones and turns him to the local talker. `Utilities.MartyTalk` plays per-player lines in `StarterGui.MartyTalk` (a copy of Hale's panel). Server: `ElevatorService:_OnMartyTalk`, TALK enabled after `GateDriveDone`. No catch or chase until the owner asks.
 
 ### Floors and storage
 - Edit floors in `Workspace.BlackwaterAuthoring`.
