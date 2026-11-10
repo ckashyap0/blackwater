@@ -342,7 +342,7 @@ function Controller:_View(dt,camera,b)
   local desktop=game:GetService('UserInputService').PreferredInput==Enum.PreferredInput.KeyboardAndMouse
   local world=camera.CFrame*float*HeldMotion.CarryPose(self._carryTool.Size,aspect,camera.FieldOfView,amount,desktop and HeldMotion.DesktopCarrySpread or nil)
   do local drop=self._carryDrop;if drop then world=world-camera.CFrame.UpVector*drop end end -- (an item can sit a little lower in the hand: HeldViewDrop)
-  if self._carryFlat then world=world*CFrame.Angles(math.rad(-6),math.rad(-14),math.rad(7)) end -- (R36) held upright, angled in a little, like a real card
+  if self._carryFlat then world=(world+camera.CFrame.UpVector*.14)*CFrame.Angles(math.rad(-6),math.rad(-14),math.rad(7)) end -- (R36) held upright, angled in a little, like a real card (lifted so the bottom edge stays in view)
    self._carryTool.CFrame=world
   if self._carryView then
    self._carryView:PivotTo(HeldMotion.Compress(camera.CFrame.Position,world))

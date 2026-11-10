@@ -191,7 +191,7 @@ function Service:Pickup(player,id,given)
 		local look=root and Vector3.new(root.CFrame.LookVector.X,0,root.CFrame.LookVector.Z) or Vector3.new(0,0,-1)
 		if look.Magnitude<.05 then look=Vector3.new(0,0,-1) end
 		local at=gripFrame.Position
-		clone.CFrame=CFrame.lookAt(at,at+look.Unit)*CFrame.new(0,clone.Size.Y*.3,-.06)*CFrame.Angles(math.rad(-8),0,math.rad(6))
+		clone.CFrame=CFrame.lookAt(at,at+look.Unit)*CFrame.new(0,clone.Size.Y*.42,-.06)*CFrame.Angles(math.rad(-8),0,math.rad(6))
 	end
 	clone.Parent=character
 	local weld=Instance.new("WeldConstraint");weld.Part0=hand;weld.Part1=clone;weld.Parent=clone;entry.carry=clone

@@ -18,7 +18,7 @@ local M={}
 M.Lines={"I did not want to get up at 5 this morning.","On the bright side, I'm starting a new job today.","The place looked old and run down, but maybe that's just how water facilities are.","Better get going before I'm late."}
 -- (cruise: the first seconds of the drive, the car simply bowling along the highway seen from beside it)
 -- (the lines play one after another and SPACE skips to the next; the drive waits for the last one)
-local T={line1=.6,cps=26,lineHold=1.6,textFade=.6,lineGap=.2,driveAt=9.7,reveal=1.0,cruise=6,drive=14.3,park=1.0,fade=.8,fadeIn=1.1,outHold=2.4}
+local T={line1=.6,cps=17,lineHold=1.6,textFade=.6,lineGap=.2,driveAt=9.7,reveal=1.0,cruise=6,drive=14.3,park=1.0,fade=.8,fadeIn=1.1,outHold=2.4}
 -- (R36) TYPEWRITER: each letter lands on its own uneven beat (a person typing, not a ticker), with a short
 -- pause after punctuation, and a key strike for every letter (ProSoundEffects "Typewriter N (SFX)",
 -- 1920s Remington single strokes; only the first strike of each clip plays). A deeper strike ends each line.
@@ -495,7 +495,10 @@ function M.Play(opts)
   task.spawn(function()while folder.Parent do local t=os.clock()-base;local k=math.clamp((t-T.driveAt)/1.8,0,1);k=k*k*(3-2*k);for l,b in heads do l.Brightness=b*k end;if k>=1 then break end;RunService.RenderStepped:Wait() end end)
   camera.CameraType=Enum.CameraType.Scriptable;camera.FieldOfView=55
   local WIDE=Vector3.new(-40,106,-447)+DY
-  local GH0,GH1=Vector3.new(-5.9,106.7,-368.8)+DY,Vector3.new(-5.6,106.2,-371.0)+DY
+  -- (R36) the pull-up to the barrier is seen from above the gatehouse side, wide (it was a low camera right
+  -- beside the car, like standing there); CR0 -> CR1 is the crane outside the corner of the turn
+  local GH0,GH1=Vector3.new(-3,114,-359)+DY,Vector3.new(-2,112,-363)+DY
+  local CR0,CR1=Vector3.new(21,104.8,-451)+DY,Vector3.new(27,117,-459)+DY
   local SHOT_AT={.42,.8}
   local MAIN=T.driveAt+T.cruise
   local function sAt(t)local u=math.clamp((t-MAIN)/T.drive,0,1);return t<MAIN and v0*math.max(0,t-T.driveAt) or extra+Lb*(1-(1-u)^2.3) end
@@ -568,9 +571,12 @@ function M.Play(opts)
    local wantPos,wantLook
    if shot==0 then wantPos=(cf*CFrame.new(-7.5,2.6,-2.5)).Position;wantLook=(cf*CFrame.new(0,1.7,-3)).Position -- alongside it on the highway
    elseif shot==1 then local cx=cf.Position.X;wantPos=Vector3.new(cx<xm and WIDE.X-(xm-cx)*.75 or WIDE.X,WIDE.Y,WIDE.Z);wantLook=target -- across the highway, one unbroken shot
-   elseif shot==2 then -- chase: the camera swings round after the car lazily, not locked to its nose
-     local hy=yawOf(path:dir(s));camYaw=camYaw and camYaw+((hy-camYaw+math.pi)%(2*math.pi)-math.pi)*(1-math.exp(-dt*1.8)) or hy
-     local ccf=CFrame.new(cf.Position)*CFrame.Angles(0,camYaw,0);wantPos=(ccf*CFrame.new(3.8,5.8,20)).Position;wantLook=(ccf*CFrame.new(0,2.2,-12)).Position
+   elseif shot==2 then
+    -- (R36) the turn off the highway, theatrical and plainly third person: a camera outside the corner,
+    -- low by the verge, cranes up and back as the car swings past it onto the access road (it used to trail
+    -- close behind the tail lights, which read as riding in a following car)
+    local q=smooth((t-tWide)/math.max(tLast-tWide,.1))
+    wantPos=CR0:Lerp(CR1,q);wantLook=target
    else
     local push=smooth((t-(MAIN+SHOT_AT[2]*T.drive))/(T.drive*(1-SHOT_AT[2])+T.park))
     wantPos=GH0:Lerp(GH1,push);wantLook=target
