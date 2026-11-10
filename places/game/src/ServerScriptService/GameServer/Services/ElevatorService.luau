@@ -837,6 +837,39 @@ function Service:_CheckpointHandles(yard)
 		t.Parent=car
 		holdTarget(t,"CarGetIn","GET IN",.5,7,false,"CarGetIn");t:SetAttribute("EHWholeModel",true)
 	end
+	-- (R34) Marty on the red square outside the works gate: hold E (TALK) for a short talk on your own screen
+	-- (Utilities.MartyTalk). It switches on once the crew has driven through the barrier (GateDriveDone).
+	local marty=nil
+	for _,m in CS:GetTagged("MartyNPC")do if m:IsDescendantOf(yard) then marty=m;break end end
+	if marty and marty.PrimaryPart then
+		local t=Instance.new("Part");t.Name="MartyTalk";t.Anchored=true;t.CanCollide=false;t.CanTouch=false;t.CanQuery=true
+		local bcf,bsz=marty:GetBoundingBox()
+		t.Transparency=1;t.CastShadow=false;t.Size=Vector3.new(math.max(bsz.X,2.5),bsz.Y,math.max(bsz.Z,2.5));t.CFrame=bcf
+		t.Parent=marty
+		local ready=not yard:GetAttribute("ArrivalCar") or yard:GetAttribute("GateDriveDone")==true
+		holdTarget(t,"MartyTalk","TALK",.3,10,ready,"MartyTalk")
+		if not ready then
+			local c;c=yard:GetAttributeChangedSignal("GateDriveDone"):Connect(function()
+				if yard:GetAttribute("GateDriveDone") and t.Parent then t:SetAttribute("EHInteractionEnabled",true);c:Disconnect() end
+			end)
+			self._scope:Add(c)
+		end
+	end
+end
+function Service:_OnMartyTalk(player)
+	local b=self._boarding;local yard=self._yard
+	if not b or b.closing or not yard then return end
+	if yard:GetAttribute("ArrivalCar") and not yard:GetAttribute("GateDriveDone") then return end
+	local t=yard:FindFirstChild("MartyTalk",true);local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not t or not root or (root.Position-t.Position).Magnitude>16 then return end
+	local okM,Talk=pcall(require,game.ReplicatedStorage.Game.Shared.Utilities.MartyTalk)
+	if not okM then return end
+	local now=workspace:GetServerTimeNow()
+	local at,set=player:GetAttribute("EHMartyTalkAt"),player:GetAttribute("EHMartyTalkSet")
+	if type(at)=="number" and now<at+Talk.Duration(set)-.3 then return end -- still talking
+	player:SetAttribute("EHMartyTalkSet",player:GetAttribute("EHMartyTalked") and 2 or 1)
+	player:SetAttribute("EHMartyTalked",true)
+	player:SetAttribute("EHMartyTalkAt",now)
 end
 function Service:_OnStallCheckIn(player)
 	local b=self._boarding;local yard=self._yard
@@ -964,7 +997,7 @@ end
 function Service:_EndBoarding()
 	if self._surfaceCard then pcall(function()self._inventory:RetireFloor("Surface")end);self._surfaceCard=nil end
 	self._boarding=nil
-	for _,p in self._players:GetPlayers()do if typeof(p)=="Instance" and p:IsA("Player") then p:SetAttribute("EHInCar",nil);p:SetAttribute("EHCarSeat",nil);p:SetAttribute("EHKeycard",nil);p:SetAttribute("EHSurfaceKit",nil) end end
+	for _,p in self._players:GetPlayers()do if typeof(p)=="Instance" and p:IsA("Player") then p:SetAttribute("EHInCar",nil);p:SetAttribute("EHCarSeat",nil);p:SetAttribute("EHKeycard",nil);p:SetAttribute("EHSurfaceKit",nil);p:SetAttribute("EHMartyTalkAt",nil);p:SetAttribute("EHMartyTalkSet",nil);p:SetAttribute("EHMartyTalked",nil) end end
 	for _,p in self._players:GetPlayers()do if typeof(p)=="Instance" and p:IsA("Player") then p.RespawnLocation=self._environment.Spawn end end
 	if self._yard then self._yard:Destroy();self._yard=nil end
 	self._cabin:SetAttribute("Boarding",nil);self._cabin:SetAttribute("ArrivalCar",nil);if self._players==Players then game.ReplicatedStorage.Game:SetAttribute("SurfaceBoarding",nil) end
@@ -1252,7 +1285,7 @@ function Service:Start()
 				pcall(self._OnGateRequest,self,player)
 			end))
 			-- the checkpoint: check in at the gatehouse, then get back in the car (see _CheckpointHandles)
-			for name,fn in {StallCheckIn=self._OnStallCheckIn,CarGetIn=self._OnCarGetIn}do
+			for name,fn in {StallCheckIn=self._OnStallCheckIn,CarGetIn=self._OnCarGetIn,MartyTalk=self._OnMartyTalk}do
 				local r=network:FindFirstChild(name)
 				if not r then r=Instance.new("RemoteEvent");r.Name=name;r.Parent=network;self._scope:Add(r) end
 				local lastT=setmetatable({},{__mode="k"})

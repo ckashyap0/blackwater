@@ -53,6 +53,10 @@ Paths are the same in both places unless marked.
 - Game screens include `MaintenanceTasks` (objective bar), `ControlRoomHud`, `ControlRoomTasks`, `PocketRecords` (lore reader), `Stamina`.
 - Preserve existing Frames and buttons. Never replace a working screen with a code-built one.
 
+### NPCs
+- Hale (gatehouse): `Utilities.FrontDeskNPC` + `Utilities.CheckInTalk`, panel `StarterGui.CheckInTalk`. One talk for the whole crew.
+- Marty (R34, red square `MartyMarker_Greeting` outside the works gate): tag `MartyNPC`, model in `SurfaceYard.19_MartyMarkers.MartyMarker_Greeting.Marty` (Marty_v3 import, asset 113922065630038). `Utilities.MartyNPC` samples `Anim_Idle` (a KeyframeSequence inside the model) onto the bones and turns him to the local talker. `Utilities.MartyTalk` plays per-player lines in `StarterGui.MartyTalk` (a copy of Hale's panel). Server: `ElevatorService:_OnMartyTalk`, TALK enabled after `GateDriveDone`. No catch or chase until the owner asks.
+
 ### Floors and storage
 - Edit floors in `Workspace.BlackwaterAuthoring`.
 - `EnvironmentService` parks floors into `ServerStorage.GameAssets.FloorTemplates` at play time.

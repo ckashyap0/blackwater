@@ -732,6 +732,8 @@ function Controller:Start()
  pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.CrtStatic).Start()end) -- (Oct 26) gatehouse CRT snow
  pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.FrontDeskNPC).Start()end) -- (Oct 26) gatehouse attendant: breathing, head sway, head follow after check-in
  pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.CheckInTalk).Start()end) -- (Nov 2) check-in conversation box (StarterGui.CheckInTalk)
+ pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.MartyNPC).Start()end) -- (R34) Marty at the works gate: idle clip, turns to whoever talks to him
+ pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.MartyTalk).Start()end) -- (R34) talking to Marty (StarterGui.MartyTalk, same look as Hale's)
   task.spawn(function()
    while self._scope do
     local runtime=workspace:FindFirstChild('Runtime');local env=runtime and runtime:FindFirstChild('DescentEnvironment')
