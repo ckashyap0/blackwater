@@ -32,7 +32,7 @@ local ok,err=xpcall(function()
  for _,name in {"CleanupScope","TableUtil","Validation","Lifecycle","SprintModel","SpectatorPolicy","IntroTimeline","RouteGuide","HeldItemMotion","ObjectiveVisibility","MobileLayout","FloorRefs","SoundFade","AuthoredGui","ControlLock","ScreenFade","HudReveal","CrawlState","SinkCurve"}do need(utilities,name)end
  for _,name in {"ServiceContract","RunContract","NetworkContract","CharacterContract"}do need(contracts,name)end
  local controllers=need(root,"Controllers")
- for _,name in {"StateController","InterfaceController","InputController","MovementController","CameraController","InteractionController","EquipmentController","SurvivalController","PartyController","ArrivalController","FixtureController","ImmersionController","ObjectiveController","LoreController","CrouchPoseController","MechanismController","HazardController","AtmosphereController","VentScrewController","CosmeticsController","CrawlController","ControlRoomController","AssetWarmupController"}do need(controllers,name)end
+ for _,name in {"StateController","InterfaceController","InputController","MovementController","CameraController","InteractionController","EquipmentController","SurvivalController","PartyController","ArrivalController","FixtureController","ImmersionController","ObjectiveController","LoreController","CrouchPoseController","MechanismController","HazardController","AtmosphereController","VentScrewController","CosmeticsController","CrawlController","ControlRoomController","AssetWarmupController","UiScaleController"}do need(controllers,name)end
  local Config=require(configFolder.GameConfig)
 	local Constants=require(Shared.Constants)
 	local Lifecycle=require(Shared.Utilities.Lifecycle)
@@ -68,11 +68,12 @@ local ok,err=xpcall(function()
  local CrawlController=require(root.Controllers.CrawlController)
  local ControlRoomController=require(root.Controllers.ControlRoomController)
  local AssetWarmupController=require(root.Controllers.AssetWarmupController)
+ local UiScaleController=require(root.Controllers.UiScaleController)
 	local diagnostics=game:GetService("RunService"):IsStudio() and root or nil
 	local state=StateController.new(network,player,diagnostics)
 	runner=Lifecycle.new({state,InputController.new(player,playerGui),
 		MovementController.new(player,playerGui),CameraController.new(player),InteractionController.new(player,playerGui),
-		EquipmentController.new(player),SurvivalController.new(player,playerGui),PartyController.new(player,playerGui),ArrivalController.new(player,playerGui),FixtureController.new(),ImmersionController.new(player),ObjectiveController.new(player,playerGui),LoreController.new(player,playerGui),CrouchPoseController.new(player),MechanismController.new(),HazardController.new(player),AtmosphereController.new(player),VentScrewController.new(player),CosmeticsController.new(player),CrawlController.new(player),ControlRoomController.new(player,playerGui),AssetWarmupController.new(player),InterfaceController.new(playerGui)})
+		EquipmentController.new(player),SurvivalController.new(player,playerGui),PartyController.new(player,playerGui),ArrivalController.new(player,playerGui),FixtureController.new(),ImmersionController.new(player),ObjectiveController.new(player,playerGui),LoreController.new(player,playerGui),CrouchPoseController.new(player),MechanismController.new(),HazardController.new(player),AtmosphereController.new(player),VentScrewController.new(player),CosmeticsController.new(player),CrawlController.new(player),ControlRoomController.new(player,playerGui),AssetWarmupController.new(player),InterfaceController.new(playerGui),UiScaleController.new(playerGui)})
 	runner:Start()
 	script.Destroying:Connect(function() alive=false;runner:Destroy() end)
 	root:SetAttribute("ConnectionState","Connecting")

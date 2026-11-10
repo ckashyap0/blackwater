@@ -27,6 +27,8 @@ local HudScale=require(game.ReplicatedStorage.Game.Shared.Utilities.HudScale)
 -- (FONT/MONO/make/label below are only for the in-world screens that draw live graphs.)
 local FONT=Enum.Font.GothamMedium;local MONO=Enum.Font.Code
 local CYAN=Color3.fromRGB(90,220,255);local GREEN=Color3.fromRGB(135,226,161);local AMBER=Color3.fromRGB(232,166,64);local RED=Color3.fromRGB(232,84,80)
+-- (Nov 8) the floor's screens and job UI are red and white
+local WHITE=Color3.fromRGB(245,243,240);local WRED=Color3.fromRGB(225,52,46)
 local PANEL=Color3.fromRGB(8,9,10);local INK=Color3.fromHex('ebe8e1');local MUTED=Color3.fromHex('96928a');local GOLD=Color3.fromHex('d6ac3e')
 local BREAKER_COLORS={Color3.fromRGB(196,72,60),Color3.fromRGB(214,172,62),Color3.fromRGB(96,170,110),Color3.fromRGB(80,130,200),Color3.fromRGB(214,210,200)}
 local EASE=TweenInfo.new(.22,Enum.EasingStyle.Quart,Enum.EasingDirection.Out)
@@ -185,14 +187,14 @@ function Controller:_Screen(f,s,now,state)
  elseif kind=='BreakerOrder' then self:_OrderScreen(f,s,now,state);s.next=now+.2
  elseif kind=='Upload' then
   local l=s.gui:FindFirstChildWhichIsA('TextLabel',true)
-  if l then l.Text=state.done.Upload and 'SECNET v4.2\nnode4:~$ upload\n<font color="#9cf0b0">transfer complete</font>\nnode4:~$ _' or (state.stage=='Keycard' and 'SECNET v4.2\nACCESS LOCKED\nnode4:~$ _' or 'SECNET v4.2\nlogs waiting: 9\nnode4:~$ press E'..(math.floor(now*2)%2==0 and '_' or ' ')) end
+  if l then l.Text=state.done.Upload and 'SECNET v4.2\nnode4:~$ upload\n<font color="#ff5a50">transfer complete</font>\nnode4:~$ _' or (state.stage=='Keycard' and 'SECNET v4.2\nACCESS LOCKED\nnode4:~$ _' or 'SECNET v4.2\nlogs waiting: 9\nnode4:~$ press E'..(math.floor(now*2)%2==0 and '_' or ' ')) end
   s.next=now+.5
  elseif kind=='Reboot' then
-  local l=s.gui:FindFirstChildWhichIsA('TextLabel',true)
+  local l=s.gui:FindFirstChild('Status',true)
   if l then
-   if state.rebooted then l.TextColor3=GREEN;l.Text='SYSTEM ONLINE\n100%'
-   elseif state.rebootP then l.TextColor3=state.rebootNear and CYAN or RED;l.Text=(state.rebootNear and 'RESTARTING...' or 'STAY CLOSE!')..'\n'..string.format('%d%%',math.floor(state.rebootP))
-   else l.TextColor3=Color3.fromRGB(255,90,70);l.Text=(state.stage=='Reboot' and 'PRESS THE BUTTON\nTO RESTART' or 'SYSTEM HALTED\nREBOOT REQUIRED') end
+   if state.rebooted then l.TextColor3=WHITE;l.Text='SYSTEM ONLINE\n100%'
+   elseif state.rebootP then l.TextColor3=state.rebootNear and WHITE or WRED;l.Text=(state.rebootNear and 'RESTARTING...' or 'STAY CLOSE!')..'\n'..string.format('%d%%',math.floor(state.rebootP))
+   else l.TextColor3=WRED;l.Text=(state.stage=='Reboot' and 'PRESS THE BUTTON\nTO RESTART' or 'SYSTEM HALTED\nREBOOT REQUIRED') end
   end
   s.next=now+.15
  else s.next=now+5 end
@@ -253,14 +255,14 @@ function Controller:_OrderScreen(f,s,now,state)
    c.Num.Text=i and tostring(i) or '-'
    c.Num.TextTransparency=done and .55 or 0
    c.Strip.BackgroundColor3=i and BREAKER_COLORS[i] or Color3.fromRGB(51,51,51)
-   c.Ring.Color=tripped and RED or (done and GREEN or ((cur and blink) and INK or AMBER))
+   c.Ring.Color=tripped and WRED or (done and WHITE or ((cur and blink) and WHITE or WRED))
    c.Ring.Transparency=(done or cur or tripped) and 0 or .55
   end
  end
  local st=bg:FindFirstChild('Status')
  if st then
   st.Text=state.done.Breakers and 'COMPLETE' or (tripped and 'TRIPPED - START AGAIN' or string.format('STEP %d / 5',math.min(5,state.breakerProgress+1)))
-  st.TextColor3=state.done.Breakers and GREEN or (tripped and RED or AMBER)
+  st.TextColor3=(tripped and not state.done.Breakers) and WRED or WHITE
  end
 end
 ------------------------------------------------------------------ floor state each frame
@@ -330,7 +332,7 @@ function Controller:_Living(dt)
   if s.p.Parent and (s.p.Position-cam).Magnitude<140 then
    if not s.fx then pcall(self._SparkFx,self,s) end
    if s.fx and now>=s.next then
-    s.next=now+1.6+math.random()*4.5
+    s.next=now+6+math.random()*9 -- (Nov 8) fewer bursts: the crackle got tiring
     pcall(self._SparkBurst,self,s)
    end
   end
@@ -405,19 +407,19 @@ function Controller:_SparkFx(s)
  pe.Speed=NumberRange.new(6,14);pe.SpreadAngle=Vector2.new(70,70);pe.Lifetime=NumberRange.new(.25,.7)
  pe.Acceleration=Vector3.new(0,-40,0);pe.Drag=1.5;pe.Rate=0;pe.EmissionDirection=Enum.NormalId.Bottom;pe.Parent=a
  local l=Instance.new('PointLight');l.Name='SparkFlash';l.Color=Color3.fromRGB(190,215,255);l.Range=16;l.Brightness=0;l.Shadows=false;l.Parent=a
- local hum=Instance.new('Sound');hum.Name='LiveWireBuzz';hum.SoundId='rbxassetid://9112889325';hum.Looped=true;hum.Volume=.12;hum.PlaybackSpeed=1.9
+ local hum=Instance.new('Sound');hum.Name='LiveWireBuzz';hum.SoundId='rbxassetid://9112889325';hum.Looped=true;hum.Volume=.06;hum.PlaybackSpeed=1.9
  hum.RollOffMinDistance=3;hum.RollOffMaxDistance=26;hum.Parent=s.p;hum:Play()
  s.fx={pe=pe,light=l,hum=hum}
 end
 function Controller:_SparkBurst(s)
  local fx=s.fx;if not fx or not fx.pe.Parent then return end
- local z=Instance.new('Sound');z.SoundId=ZAPS[math.random(1,#ZAPS)];z.Volume=.55+math.random()*.25;z.PlaybackSpeed=.9+math.random()*.25
+ local z=Instance.new('Sound');z.SoundId=ZAPS[math.random(1,#ZAPS)];z.Volume=.32+math.random()*.15;z.PlaybackSpeed=.9+math.random()*.25
  z.RollOffMinDistance=5;z.RollOffMaxDistance=60;z.Parent=s.p;z:Play();game:GetService('Debris'):AddItem(z,3)
  task.spawn(function()
   -- two or three quick spits, each with a blue-white flash
   for i=1,math.random(2,3) do
    if not fx.pe.Parent then return end
-   fx.pe:Emit(math.random(10,22));fx.light.Brightness=3+math.random()*2
+   fx.pe:Emit(math.random(10,22));fx.light.Brightness=1.6+math.random()*1.2
    if fx.hum.Parent then fx.hum.Volume=.3 end
    task.wait(.05+math.random()*.06);fx.light.Brightness=0
    task.wait(.04+math.random()*.12)
@@ -544,10 +546,10 @@ function Controller:_Hud(floor,state,dt)
   local fill=self._restart.Track.Fill
   fill.Size=fill.Size:Lerp(UDim2.fromScale(p,1),k)
   self._restart.Percent.Text=string.format('%d%%',math.floor(state.rebootP))
-  local col=state.rebootNear and GOLD or RED
+  local col=state.rebootNear and WHITE or WRED
   fill.BackgroundColor3=col
   self._restart.Hint.Text=state.rebootNear and 'Stay close to the core' or 'Get back to the core - it stops without you'
-  self._restart.Hint.TextColor3=state.rebootNear and MUTED or RED
+  self._restart.Hint.TextColor3=state.rebootNear and MUTED or WRED
  end
 end
 function Controller:_ShowToast(text)

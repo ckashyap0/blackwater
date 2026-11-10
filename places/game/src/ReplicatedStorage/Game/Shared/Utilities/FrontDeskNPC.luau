@@ -48,7 +48,7 @@ local function elevOf(v) return math.atan2(v.Y, math.sqrt(v.X * v.X + v.Z * v.Z)
 -- end joints straighten a little under load; the key travels ~4 mm; contact is short. Profile over TAP seconds:
 --   0 - .18  a small lift off the key        .18 - .40  the strike (fast, eases in)
 --   .40 - .60 bottomed out (the click)       .60 - 1    back up to resting on the key (eases out)
-local LIFT, PRESS = math.rad(2.5), math.rad(4)
+local LIFT, PRESS = math.rad(6), math.rad(3.5)   -- (Nov 5: bigger lift so the fingers visibly rise and fall, like the reference clips)
 local function ease(x) x = math.clamp(x, 0, 1) return x * x * (3 - 2 * x) end
 local function keystroke(e)
 	local a
@@ -63,7 +63,112 @@ local HAND = {
 	r = {{'index', .38}, {'middle', .30}, {'ring', .20}, {'pinky', .12}},
 }
 local NEIGHBOURS = {index = {'middle'}, middle = {'index', 'ring'}, ring = {'middle', 'pinky'}, pinky = {'ring'}, thumb = {}}
-local COUPLE = .18
+local COUPLE = .3
+
+-- RESTING HANDS (Nov 5, from the reference image): fingers close together and gently curved down onto the keys,
+-- knuckles the highest point. Worked out once at startup on top of the baked pose: the wrist lifts HAND_X, each
+-- finger's end joint curls CURL2 degrees, its base joint is aimed FAN degrees off the hand's forward line (toward the
+-- thumb is +), and its down angle is solved so the fingertip rests TIP_CLEAR studs above the key under it.
+-- (Nov 5 b) straighter: a big curl and fully re-aimed base joints crushed and twisted the knuckles, so the end joints
+-- curl only a little and the base joints turn only YAW_BLEND of the way toward the FAN line (less twist).
+local POSE = {
+	HAND_X = 6,
+	FAN = {index = 5, middle = 1, ring = -3, pinky = -7},
+	YAW_BLEND = .7,
+	CURL2 = {index = 6, middle = 5, ring = 5, pinky = 4},
+	TIP_CLEAR = .045,     -- (Nov 5 e) more room so a keystroke never pushes a fingertip into the keyboard
+	TIP_LEN = 1.6,        -- (Nov 5 c) end segment + fingertip, as a multiple of the base segment (1.15 put the tips in the keys)
+	THUMB_LEN = 1.3,      -- (Nov 5 d) the thumb's base (metacarpal) is left alone; only its knuckle bends, bringing the
+	THUMB_OUT = 38,       -- (Nov 5 f) how far out to the side the thumb rests
+	THUMB_FWD = .9,       --   thumb out from under the palm toward the space bar (THUMB_FWD of the way to the hand's
+	THUMB_DROP = 14,      --   forward line) and down until its tip rests on the keys. One plain rotation, no roll.
+	THUMB_MAXDOWN = 30,   -- the base knuckle tips down THUMB_DROP deg so the thumb can lie flatter (at most MAXDOWN deg)
+}
+M.Pose = POSE
+
+-- base local Transform for every posed bone: {boneName = CFrame}. Call with every bone's Transform at identity.
+function M.SolvePose(m, scope)
+	local B = {}
+	for _, b in m:GetDescendants() do if b:IsA('Bone') then B[b.Name] = b end end
+	local base = {}
+	local kb = scope and scope:FindFirstChild('Prop_KB_Keys', true)
+	local rp = RaycastParams.new(); rp.FilterType = Enum.RaycastFilterType.Include
+	rp.FilterDescendantsInstances = {kb and kb.Parent or scope}
+	for _, side in {'l', 'r'} do
+		local hand = B['hand_' .. side]; local i1 = B['index_01_' .. side]; local p1 = B['pinky_01_' .. side]
+		if not (hand and i1 and p1) then continue end
+		base[hand.Name] = CFrame.Angles(math.rad(POSE.HAND_X), 0, 0); hand.Transform = base[hand.Name]
+		local fallbackY = i1.WorldPosition.Y - .13
+		local fwd = hand.WorldCFrame.UpVector; fwd = Vector3.new(fwd.X, 0, fwd.Z).Unit
+		local ts = i1.WorldPosition - p1.WorldPosition; ts = ts - fwd * ts:Dot(fwd); ts = Vector3.new(ts.X, 0, ts.Z).Unit
+		-- thumb: one bend at the knuckle (its own curl axis), solved so the tip rests on the keyboard
+		local t1 = B['thumb_01_' .. side]; local t2 = B['thumb_02_' .. side]
+		if t1 and t2 then
+			t1.Transform = CFrame.identity; t2.Transform = CFrame.identity
+			local L = (t2.WorldPosition - t1.WorldPosition).Magnitude * POSE.THUMB_LEN
+			do -- base knuckle: tip it straight down (about the horizontal axis across it - no roll)
+				local R = t1.WorldCFrame.Rotation; local d = R.UpVector
+				local across = d:Cross(Vector3.yAxis)
+				if across.Magnitude > 1e-4 then
+					local Dw = CFrame.fromAxisAngle(across.Unit, -math.rad(POSE.THUMB_DROP))
+					if (Dw * d).Y > d.Y then Dw = Dw:Inverse() end
+					t1.Transform = R:Inverse() * Dw * R
+				end
+			end
+			local own = t2.WorldCFrame.UpVector; own = Vector3.new(own.X, 0, own.Z).Unit
+			-- (Nov 5 f) out from under the palm: forward and THUMB_OUT degrees out to the thumb side (toward the middle of
+			-- the keyboard), lying fairly flat on the keys
+			local out = (fwd * math.cos(math.rad(POSE.THUMB_OUT)) + ts * math.sin(math.rad(POSE.THUMB_OUT))).Unit
+			local dirH = own:Lerp(out, POSE.THUMB_FWD).Unit
+			local function tipAt(p)
+				local d = dirH * math.cos(p) - Vector3.yAxis * math.sin(p)
+				t2.Transform = CFrame.identity
+				local R = t2.WorldCFrame.Rotation; local cur = R.UpVector
+				local ax = cur:Cross(d); local ang = math.asin(math.clamp(ax.Magnitude, 0, 1)); if cur:Dot(d) < 0 then ang = math.pi - ang end
+				t2.Transform = ax.Magnitude > 1e-6 and (R:Inverse() * CFrame.fromAxisAngle(ax.Unit, ang) * R) or CFrame.identity
+				local w = t2.TransformedWorldCFrame   -- (WorldCFrame leaves out the bone's own Transform)
+				return w.Position + w.UpVector * L
+			end
+			local lo, hi = math.rad(-10), math.rad(POSE.THUMB_MAXDOWN)
+			for _ = 1, 22 do
+				local mid = (lo + hi) / 2; local tip = tipAt(mid)
+				local hit = workspace:Raycast(tip + Vector3.new(0, 1, 0), Vector3.new(0, -2, 0), rp)
+				if tip.Y > (hit and hit.Position.Y or fallbackY) + POSE.TIP_CLEAR then lo = mid else hi = mid end
+			end
+			tipAt((lo + hi) / 2)
+			base[t1.Name] = t1.Transform; base[t2.Name] = t2.Transform
+		end
+		for f, fan in POSE.FAN do
+			local b1 = B[f .. '_01_' .. side]; local b2 = B[f .. '_02_' .. side]
+			if not (b1 and b2) then continue end
+			local L2 = (b2.WorldPosition - b1.WorldPosition).Magnitude * POSE.TIP_LEN
+			b1.Transform = CFrame.identity; b2.Transform = CFrame.identity
+			local own = b1.WorldCFrame.UpVector; own = Vector3.new(own.X, 0, own.Z).Unit   -- where it points now
+			local fanDir = (fwd * math.cos(math.rad(fan)) + ts * math.sin(math.rad(fan))).Unit
+			local dirH = own:Lerp(fanDir, POSE.YAW_BLEND).Unit
+			local c2 = CFrame.Angles(math.rad(POSE.CURL2[f]), 0, 0)
+			local function apply(p)
+				local d = dirH * math.cos(p) - Vector3.yAxis * math.sin(p)
+				b1.Transform = CFrame.identity
+				local R = b1.WorldCFrame.Rotation; local cur = R.UpVector
+				local ax = cur:Cross(d); local ang = math.asin(math.clamp(ax.Magnitude, 0, 1)); if cur:Dot(d) < 0 then ang = math.pi - ang end
+				local Dw = ax.Magnitude > 1e-6 and CFrame.fromAxisAngle(ax.Unit, ang) or CFrame.identity
+				b1.Transform = R:Inverse() * Dw * R; b2.Transform = c2
+				local w = b2.TransformedWorldCFrame
+				return w.Position + w.UpVector * L2
+			end
+			local lo, hi = math.rad(-30), math.rad(55)
+			for _ = 1, 22 do
+				local mid = (lo + hi) / 2; local tip = apply(mid)
+				local hit = workspace:Raycast(tip + Vector3.new(0, 1, 0), Vector3.new(0, -2, 0), rp)
+				if tip.Y > (hit and hit.Position.Y or fallbackY) + POSE.TIP_CLEAR then lo = mid else hi = mid end
+			end
+			apply((lo + hi) / 2)
+			base[b1.Name] = b1.Transform; base[b2.Name] = b2.Transform
+		end
+	end
+	return base
+end
 local function pickFinger(side)
 	local r, acc = math.random(), 0
 	for _, e in HAND[side] do acc += e[2]; if r <= acc then return e[1] end end
@@ -84,6 +189,17 @@ local function setup(m, t)
 	for _, b in m:GetDescendants() do if b:IsA('Bone') then s.bones[b.Name] = b; b.Transform = CFrame.identity end end
 	s.Rc0 = chest.WorldCFrame.Rotation; s.Rn0 = neck.WorldCFrame.Rotation; s.Rh0 = head.WorldCFrame.Rotation
 	s.headPos = head.WorldPosition
+	s.base = M.SolvePose(m, m.Parent or m)
+	-- (Nov 5 d) the thumb presses the space bar by bending straight down at its knuckle (its own X axis swings it sideways)
+	s.thumbAx = {}
+	for _, side in {'l', 'r'} do
+		local t2 = s.bones['thumb_02_' .. side]
+		if t2 then
+			local w = t2.TransformedWorldCFrame; local d = w.UpVector
+			local ax = Vector3.yAxis:Cross(d)
+			if ax.Magnitude > 1e-4 then s.thumbAx[side] = w.Rotation:VectorToObjectSpace(ax.Unit) end
+		end
+	end
 	s.arms = {}
 	for _, side in {'l', 'r'} do
 		local u = s.bones['upperarm_' .. side]
@@ -103,7 +219,7 @@ local function setup(m, t)
 		for i, id in ids do
 			if id ~= '' then
 				local snd = Instance.new('Sound'); snd.Name = 'KeyClick' .. i; snd.SoundId = 'rbxassetid://' .. string.gsub(id, '%D', '')
-				snd.Volume = .18; snd.RollOffMode = Enum.RollOffMode.InverseTapered; snd.RollOffMinDistance = 3; snd.RollOffMaxDistance = 28
+				snd.Volume = .55; snd.RollOffMode = Enum.RollOffMode.InverseTapered; snd.RollOffMinDistance = 4; snd.RollOffMaxDistance = 40
 				snd.Parent = kb; table.insert(s.sounds, snd)
 			end
 		end
@@ -273,12 +389,24 @@ local function step(dt)
 			s.dip[side], s.dip[side .. 'v'] = spring(s.dip[side], s.dip[side .. 'v'], dip[side], 22, dt)
 			local hand = s.bones['hand_' .. side]; local fore = s.bones['lowerarm_' .. side]
 			if fore then fore.Transform = CFrame.identity end
-			if hand then hand.Transform = CFrame.Angles(math.rad(.3) * math.noise(tt * .7, side == 'l' and 1 or 2) + CURL * math.rad(.6) * s.dip[side], 0, 0) end
-			for _, f in {'index', 'middle', 'ring', 'pinky', 'thumb'} do
+			local sn = side == 'l' and 1 or 2
+			if hand then
+				-- resting pose, a slow drift of the wrist (Nov 5: so the hands never look frozen) and the dip on each strike
+				local drift = math.rad(1.1) * math.noise(tt * .45, sn) + CURL * math.rad(1) * s.dip[side]
+				local sway = math.rad(.9) * math.noise(tt * .35, sn + 10)
+				hand.Transform = (s.base[hand.Name] or CFrame.identity) * CFrame.Angles(drift, 0, sway)
+			end
+			for fi, f in {'index', 'middle', 'ring', 'pinky', 'thumb'} do
 				local b1 = s.bones[f .. '_01_' .. side]; local b2 = s.bones[f .. '_02_' .. side]
 				local key = f .. '_' .. side
-				if b1 then b1.Transform = CFrame.Angles(CURL * (mcp[key] or 0), 0, 0) end
-				if b2 then b2.Transform = CFrame.Angles(CURL * (pip[key] or 0), 0, 0) end
+				local idle = math.rad(1.2) * math.noise(tt * .6, fi * 3.1, sn)   -- small resting finger movement
+				if f == 'thumb' and s.thumbAx[side] then
+					if b1 then b1.Transform = s.base[b1.Name] or CFrame.identity end
+					if b2 then b2.Transform = (s.base[b2.Name] or CFrame.identity) * CFrame.fromAxisAngle(s.thumbAx[side], (mcp[key] or 0) + idle * .5) end
+				else
+					if b1 then b1.Transform = (s.base[b1.Name] or CFrame.identity) * CFrame.Angles(CURL * ((mcp[key] or 0) + idle), 0, 0) end
+					if b2 then b2.Transform = (s.base[b2.Name] or CFrame.identity) * CFrame.Angles(CURL * ((pip[key] or 0) + idle * .6), 0, 0) end
+				end
 			end
 		end
 	end

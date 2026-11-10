@@ -141,6 +141,44 @@ local function copyCar(orig,folder)
  for _,e in parts do local k=e.p.Name:match('^Car_Tyre(%u%u)$') or e.p.Name:match('^Car_Hub(%u%u)$');if k and axle[k] then e.axle=axle[k];e.front=k:sub(1,1)=='F' end end
  return copy,parts
 end
+-- (Nov 5) Headlight pools on the road, drawn as additive Beams on the car's own light rig. Roblox lags a fast-moving
+-- SpotLight: its light on the road trailed behind the car and then caught up (worst at the start and in the turns).
+-- A beam is drawn exactly where its attachments are on every frame, so the pool moves with the car. The real
+-- SpotLights stay on, dimmer (POOL.spot), for the light on the rails and walls. Each pool is a few stacked layers
+-- (narrower ones brighter) so it has soft edges without a texture. Returns {beam = brightness}.
+-- (Nov 8) ONE light per lamp: the road pool only (the SpotLight lagged behind the car and the three stacked layers
+-- read as three separate lights). The pool starts right under the lamp and is built from many thin, very faint
+-- layers, so it reads as one soft pool with no visible edges or source.
+local POOL={start=.25,len=30,spread=1.4,w0=1.6,w1=12,y=.08,spot=0,bright=1,layers={}}
+for i=1,10 do table.insert(POOL.layers,{w=1-(i-1)*.075,t=.975}) end
+local function roadPools(copy)
+ local out={}
+ -- (Nov 8) the parked car carries the same authored pools; rebuild them fresh on the moving copy
+ for _,d in copy:GetDescendants()do if d.Name=='HeadPool' or d.Name=='HeadPool0' or d.Name=='HeadPool1' then d:Destroy() end end
+ for _,att in copy:GetDescendants()do
+  if att:IsA('Attachment') and att.Name=='Head' and att.Parent:IsA('BasePart') then
+   local rig=att.Parent;local lc=rig:GetAttribute('CarLocal') or CFrame.identity -- the rig's place in the car frame
+   local p=lc*att.Position -- (car frame: forward is -Z, the road is at Y = 0)
+   local spot=att:FindFirstChildOfClass('SpotLight')
+   if spot then spot.Brightness*=POOL.spot;if POOL.spot<=0 then spot.Enabled=false end end
+   local col=spot and spot.Color or Color3.fromRGB(255,240,214)
+   local side=p.X>=0 and 1 or -1
+   local inv=lc:Inverse()
+   local a0=Instance.new('Attachment');a0.Name='HeadPool0';a0.CFrame=inv*CFrame.new(p.X,POOL.y,p.Z-POOL.start);a0.Parent=rig
+   local a1=Instance.new('Attachment');a1.Name='HeadPool1';a1.CFrame=inv*CFrame.new(p.X+side*POOL.spread,POOL.y,p.Z-POOL.start-POOL.len);a1.Parent=rig
+   for _,ly in POOL.layers do
+    local b=Instance.new('Beam');b.Name='HeadPool';b.Attachment0=a0;b.Attachment1=a1
+    b.FaceCamera=false;b.Segments=1;b.CurveSize0=0;b.CurveSize1=0
+    b.Width0=POOL.w0*ly.w;b.Width1=POOL.w1*ly.w
+    b.LightEmission=1;b.LightInfluence=0;b.Brightness=POOL.bright;b.Color=ColorSequence.new(col)
+    b.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(.12,ly.t),NumberSequenceKeypoint.new(.65,ly.t+(1-ly.t)*.45),NumberSequenceKeypoint.new(1,1)})
+    b.Parent=rig;out[b]=b.Brightness
+   end
+  end
+ end
+ return out
+end
+M.RoadPools=roadPools
 local function poseCar(parts,cf,spin,steer)
  for _,e in parts do
   if e.axle then
@@ -336,10 +374,10 @@ function M.Play(opts)
  local linePos=lines[1].Position
  if opts.cover then task.defer(function()if opts.cover.Parent then opts.cover:Destroy() end end) end
  player:SetAttribute('EHCinematic',true)
- local prompt=tpl.SkipPrompt:Clone();prompt.TextTransparency=1;prompt.Parent=gui
- prompt.Text=game:GetService('UserInputService').TouchEnabled and not game:GetService('UserInputService').KeyboardEnabled and 'Tap to skip' or 'Press SPACE to skip'
+ local prompt=tpl.SkipPrompt:Clone();prompt.GroupTransparency=1;prompt.Parent=gui
+ prompt.Button.Key.Text=(game:GetService('UserInputService').TouchEnabled and not game:GetService('UserInputService').KeyboardEnabled) and 'TAP' or '[SPACE]'
  local skipReq=false
- prompt.Activated:Connect(function()skipReq=true end)
+ prompt.Button.Activated:Connect(function()skipReq=true end)
  CAS:BindActionAtPriority('BWArrivalSkip',function(_,st)if st==Enum.UserInputState.Begin then skipReq=true end;return Enum.ContextActionResult.Sink end,false,Enum.ContextActionPriority.High.Value+50,Enum.KeyCode.Space,Enum.KeyCode.ButtonA)
  local function unbindSkip()pcall(function()CAS:UnbindAction('BWArrivalSkip')end);if prompt.Parent then prompt:Destroy() end end
  local done=false
@@ -414,7 +452,8 @@ function M.Play(opts)
   hid=true;crewHidden(true)
   engine=engineFor(copy,folder)
   -- headlights come up gradually once the picture is revealed
-  local heads={};for _,l in copy:GetDescendants()do if l:IsA('SpotLight') then heads[l]=l.Brightness;l.Brightness=0 end end
+  local heads=roadPools(copy);for _,l in copy:GetDescendants()do if l:IsA('SpotLight') then heads[l]=l.Brightness end end
+  for l in heads do l.Brightness=0 end
   task.spawn(function()while folder.Parent do local t=os.clock()-base;local k=math.clamp((t-T.driveAt)/1.8,0,1);k=k*k*(3-2*k);for l,b in heads do l.Brightness=b*k end;if k>=1 then break end;RunService.RenderStepped:Wait() end end)
   camera.CameraType=Enum.CameraType.Scriptable;camera.FieldOfView=55
   local WIDE=Vector3.new(-40,106,-447)+DY
@@ -445,9 +484,9 @@ function M.Play(opts)
     -- each line types in, holds, then fades out while drifting gently down (eased, no snap)
     local out=tx<lineEnd and 0 or smooth((tx-lineEnd)/T.textFade)
     l.TextTransparency=out
-    l.Position=linePos+UDim2.fromOffset(0,math.floor(10*out+.5))
+    l.Position=linePos -- (Nov 8) fades in place, no drop
     local pv=tx>=lineStart+.25 and tx<lineEnd
-    if prompt.Parent then prompt.TextTransparency+=((pv and .3 or 1)-prompt.TextTransparency)*(1-math.exp(-dt*(pv and 6 or 14))) end
+    if prompt.Parent then prompt.GroupTransparency+=((pv and 0 or 1)-prompt.GroupTransparency)*(1-math.exp(-dt*(pv and 6 or 14))) end
     if tx>=lineEnd+T.textFade then
      l.Visible=false;cur+=1;lineEnd=nil;lineStart=tx+T.lineGap
      if cur>#M.Lines then textDone=true;unbindSkip();if t<T.driveAt then base=os.clock()-T.driveAt;t=T.driveAt end end
@@ -525,6 +564,7 @@ function M.PlayGate(opts)
  local folder=Instance.new('Folder');folder.Name='ArrivalDriveLocal';folder.Parent=workspace
  lampShadows(yard,true)
  local copy,parts=copyCar(orig,folder)
+ roadPools(copy)
  setHidden(orig,true)
  -- the barrier arm (the server leaves it up for good once the car is through)
  local ck=yard:FindFirstChild('Checkpoint',true)

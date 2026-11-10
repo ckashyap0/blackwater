@@ -6,7 +6,7 @@ Studio children it does not know about (assets, ScreenGuis, MeshParts).
 import json, os, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MINIMUMS = {"lobby": 104, "game": 149}
+MINIMUMS = {"lobby": 104, "game": 145}  # R34: BackupR31/R32 deleted in Studio (in git history), UiScaleController added
 errors = []
 
 def ignores(path):

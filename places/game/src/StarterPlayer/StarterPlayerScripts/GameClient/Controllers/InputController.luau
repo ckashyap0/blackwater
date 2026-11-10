@@ -209,7 +209,7 @@ function Controller:_LayoutTouch()
   local pos=layout[action]
   button:SetAttribute('NoLayout',pos==nil)
   if not pos then button.Visible=false;continue end
-  button.AnchorPoint=Vector2.new(.5,.5);button.Size=action=='Interact'and UDim2.fromOffset(math.min(260,size.X*.55),56)or UDim2.fromOffset(layout.diameter,layout.diameter);button.Position=UDim2.fromOffset(pos.X,pos.Y)
+  button.AnchorPoint=Vector2.new(.5,.5);button.Size=action=='Interact'and UDim2.fromOffset(math.min(260,size.X*.55),56)or UDim2.fromOffset(layout.diameter,layout.diameter);button.Position=UDim2.fromOffset(pos.X-math.clamp(size.X*.03,12,30),pos.Y) -- (Nov 8) the whole cluster sits a little further left
  end
 end
 function Controller:Register(action,callback)

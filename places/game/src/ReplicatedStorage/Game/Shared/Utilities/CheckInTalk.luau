@@ -191,7 +191,7 @@ function M.Start()
 		-- the box: in with the first line (rising a few pixels), out after the last
 		local b = smooth((t - first.shown) / .3) * smooth((last.finish - t) / .4)
 		box.GroupTransparency = 1 - b
-		box.Position = boxPos + UDim2.fromOffset(0, math.floor(8 * (1 - b) + .5))
+		box.Position = boxPos -- (Nov 8) fades in place
 		-- the words (and who is speaking) fade in and out line by line inside it
 		local a = smooth((t - tl.shown) / M.FadeIn) * smooth((tl.finish - t) / M.FadeOut)
 		line.TextTransparency = 1 - (1 - baseT) * a
@@ -199,7 +199,9 @@ function M.Start()
 		speaker.TextTransparency = 1 - (1 - baseSp) * a
 		-- (Nov 4) the words drift down a few pixels as they fade out (clean, eased)
 		local outK = 1 - smooth((tl.finish - t) / M.FadeOut)
-		line.Position = basePos + UDim2.fromOffset(0, math.floor(6 * outK + .5))
+		line.Position = basePos -- (Nov 8) no drop: the words fade out in place
+		-- the portrait fades with the words, line by line
+		face.ImageTransparency = 1 - a; haleView.ImageTransparency = 1 - a
 
 	end)
 end

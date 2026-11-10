@@ -68,8 +68,46 @@ function M.Hold()
   end
  end)
 end
+-- (Nov 8) the Floor 4 server-room reader works the same way as the gate reader: blue light while it waits,
+-- READING + the same beep while someone holds E on it, then green ACCESS GRANTED once the card is in.
+local BLUE,AMBER,GREEN=Color3.fromRGB(70,150,255),Color3.fromRGB(255,170,40),Color3.fromRGB(60,255,90)
+local f4Conn
+function M.HoldFloor4()
+ if f4Conn then return end
+ local vis,slot,state,nextFind=nil,nil,nil,0
+ f4Conn=RunService.Heartbeat:Connect(function()
+  if not (vis and vis.Parent and slot and slot.Parent) then
+   vis,slot,state=nil,nil,nil
+   if os.clock()<nextFind then return end
+   nextFind=os.clock()+1
+   local rt=workspace:FindFirstChild('Runtime');if not rt then return end
+   for _,d in rt:GetDescendants()do if d.Name=='ReaderVisual' and d.Parent and d.Parent.Name=='CardReader' then vis=d;break end end
+   if not vis then return end
+   for _,d in vis.Parent:GetDescendants()do if d:IsA('BasePart') and d:GetAttribute('Ref')=='CardReader' then slot=d;break end end
+   if not slot then slot=vis.Parent:FindFirstChild('CardSlot') end
+   if not slot then vis=nil;return end
+  end
+  local want
+  if slot:GetAttribute('EHInstalledItem') then want='open'
+  else
+   want='idle'
+   for _,p in Players:GetPlayers()do if p:GetAttribute('EHActiveInteraction')=='BW4CardReader' and p:GetAttribute('EHInteractionState')=='Holding' then want='reading';break end end
+  end
+  if want==state then return end
+  state=want
+  local scr=vis:FindFirstChild('Reader_Screen');local msg=scr and scr:FindFirstChild('Msg',true)
+  local lamp;for _,d in vis:GetDescendants()do if d:IsA('BasePart') and (d:GetAttribute('Ref')=='ReaderLamp' or d.Name=='ReaderLamp') then lamp=d;break end end
+  local text,col,led=('SWIPE\nCARD'),Color3.fromRGB(150,200,255),BLUE
+  if want=='reading' then text,col,led='READING',Color3.fromRGB(255,200,90),AMBER
+   local b=vis:FindFirstChild('Reader_Body',true)
+   if b then local snd=Instance.new('Sound');snd.SoundId='rbxassetid://9113880475';snd.Volume=.6;snd.PlaybackSpeed=1.35;snd.RollOffMinDistance=6;snd.RollOffMaxDistance=60;snd.Parent=b;snd:Play();snd.Ended:Once(function()snd:Destroy()end) end
+  elseif want=='open' then text,col,led='ACCESS\nGRANTED',Color3.fromRGB(110,235,120),GREEN end
+  if msg then msg.Text=text;msg.TextColor3=col end
+  if lamp then lamp.Color=led;lamp.Material=Enum.Material.Neon end
+ end)
+end
 function M.Watch()
- M.Hold()
+ M.Hold();M.HoldFloor4()
  local me=Players.LocalPlayer
  local Sources=require(script.Parent:WaitForChild('ObjectiveSources'))
  local Lock=require(script.Parent:WaitForChild('ControlLock'))
