@@ -118,6 +118,21 @@ function M.Start()
 	local face, haleView = portrait:WaitForChild('Face'), portrait:WaitForChild('HaleView')
 	local baseT, baseS, baseSp = line.TextTransparency, line.TextStrokeTransparency, speaker.TextTransparency
 	local basePos, boxPos = line.Position, box.Position
+	-- (R37) phones: a line too long for the box grows the box upward (up to 96 px more), then shrinks the text a
+	-- step at a time (never below 18), so a line is never cut off
+	local baseH, baseTS = box.Size.Y.Offset, line.TextSize
+	local fitting = false
+	local function fitStep()
+		if not fitting then return end
+		if line.TextFits then fitting = false return end
+		if box.Size.Y.Offset < baseH + 96 then
+			box.Size = UDim2.new(box.Size.X.Scale, box.Size.X.Offset, 0, box.Size.Y.Offset + 24)
+		elseif line.TextSize > 18 then
+			line.TextSize -= 2
+		else
+			fitting = false
+		end
+	end
 	-- your portrait: your own Roblox headshot
 	task.spawn(function()
 		local ok, img = pcall(function() return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150) end)
@@ -180,6 +195,7 @@ function M.Start()
 		end
 		if i ~= lastIndex then
 			lastIndex = i
+			box.Size = UDim2.new(box.Size.X.Scale, box.Size.X.Offset, 0, baseH); line.TextSize = baseTS; fitting = true
 			line.RichText = l.kind == 'typing'
 			if l.kind ~= 'typing' then line.Text = (string.gsub(l.text, '{name}', player.Name)) end
 			speaker.Text = (string.gsub(M.Speakers[l.who] or '', '{name}', player.Name))
@@ -187,6 +203,7 @@ function M.Start()
 			face.Visible = l.who == 'you'; haleView.Visible = l.who == 'him'
 		end
 		local n = utf8.len(line.ContentText) or #line.Text
+		fitStep()
 		line.MaxVisibleGraphemes = (k >= 1) and -1 or math.floor(n * k + .5)
 		-- the box: in with the first line (rising a few pixels), out after the last
 		local b = smooth((t - first.shown) / .3) * smooth((last.finish - t) / .8) -- (R36) a slower, clearly visible fade out once the talk is done

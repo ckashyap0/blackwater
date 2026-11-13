@@ -15,25 +15,44 @@ local CS = game:GetService('CollectionService')
 
 local M = {}
 -- (R36) one set per spot and talk: <TalkSets attribute on the Marty model><1 first talk | 2 any later talk>.
--- Gate = just inside the works gate. L5 = waiting outside the lift on Level 5 (he got there first).
+-- (R37) The yard Marty moves ahead of the crew unseen: Gate (inside the works gate) -> Shaft (outside the shaft
+-- hall doors) -> Lift (beside the lift doors). L5 = beside the service panel on Level 5 (he got there first).
+-- Warm and helpful, in the same easy voice as Hale; only small things are off.
 M.Sets = {
 	Gate1 = {
 		{who = 'him', text = "There you are! You must be the new hire. Martin Voss, maintenance. Everyone calls me Marty."},
 		{who = 'you', text = "Hi, I'm {name}. Nice to meet you."},
 		{who = 'him', text = "Good to have you, {name}. Follow the road up to the shaft hall. The lift's inside."},
-		{who = 'him', text = "Take it down when you're ready. I'll meet you on Level Five."},
+		{who = 'him', text = "Go on ahead. I'll catch up with you."},
 	},
 	Gate2 = {
 		{who = 'him', text = "Don't mind the smell. After a while you stop noticing it."},
 	},
+	Shaft1 = {
+		{who = 'him', text = "Oh, there you are. Mind your step in there, the floor's always slick."},
+		{who = 'you', text = "How did you get here so fast?"},
+		{who = 'him', text = "Shortcut round the back. You learn them all after a while."},
+	},
+	Shaft2 = {
+		{who = 'him', text = "Lift's at the far end. Go on."},
+	},
+	Lift1 = {
+		{who = 'him', text = "Here she is. Old, but she still runs."},
+		{who = 'him', text = "Take her down. I'll meet you on Level Five."},
+	},
+	Lift2 = {
+		{who = 'him', text = "Level Five. I'll be there."},
+	},
 	L51 = {
-		{who = 'him', text = "There you are. Told you I'd be here."},
-		{who = 'you', text = "How did you get down here before us?"},
-		{who = 'him', text = "Service stairs. Faster than that old lift."},
+		{who = 'him', text = "Oh, hello there! Made it down alright?"},
+		{who = 'you', text = "Yeah. That lift is something."},
+		{who = 'him', text = "Isn't it? She groans, but she's never dropped anyone. Not yet, anyway."},
+		{who = 'him', text = "Everything okay? You look a little pale."},
+		{who = 'you', text = "I'm fine. What do we do first?"},
 		{who = 'him', text = "Start with the leaking pipe down the hall. Close the valve before the pressure climbs."},
 	},
 	L52 = {
-		{who = 'him', text = "Go on. I'll be right here."},
+		{who = 'him', text = "Everything alright? Holler if you need me."},
 	},
 }
 M.Speakers = {him = 'Marty', you = '{name}'}
@@ -115,6 +134,21 @@ function M.Start()
 	local face, npcView = portrait:WaitForChild('Face'), portrait:WaitForChild('NpcView')
 	local baseT, baseS, baseSp = line.TextTransparency, line.TextStrokeTransparency, speaker.TextTransparency
 	local basePos, boxPos = line.Position, box.Position
+	-- (R37) phones: a line too long for the box grows the box upward (up to 96 px more), then shrinks the text a
+	-- step at a time (never below 18), so a line is never cut off
+	local baseH, baseTS = box.Size.Y.Offset, line.TextSize
+	local fitting = false
+	local function fitStep()
+		if not fitting then return end
+		if line.TextFits then fitting = false return end
+		if box.Size.Y.Offset < baseH + 96 then
+			box.Size = UDim2.new(box.Size.X.Scale, box.Size.X.Offset, 0, box.Size.Y.Offset + 24)
+		elseif line.TextSize > 18 then
+			line.TextSize -= 2
+		else
+			fitting = false
+		end
+	end
 	task.spawn(function()
 		local ok, img = pcall(function() return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150) end)
 		if ok then face.Image = img end
@@ -164,6 +198,7 @@ function M.Start()
 		local key = tostring(at) .. ':' .. i
 		if key ~= lastKey then
 			lastKey = key
+			box.Size = UDim2.new(box.Size.X.Scale, box.Size.X.Offset, 0, baseH); line.TextSize = baseTS; fitting = true
 			line.RichText = false
 			line.Text = (string.gsub(l.text, '{name}', player.Name))
 			speaker.Text = (string.gsub(M.Speakers[l.who] or '', '{name}', player.Name))
@@ -171,6 +206,7 @@ function M.Start()
 			face.Visible = l.who == 'you'; npcView.Visible = l.who == 'him'
 		end
 		local n = utf8.len(line.ContentText) or #line.Text
+		fitStep()
 		line.MaxVisibleGraphemes = (k >= 1) and -1 or math.floor(n * k + .5)
 		local b = smooth((t - first.shown) / .3) * smooth((last.finish - t) / .8) -- (R36) a slower, clearly visible fade out once the talk is done
 		box.GroupTransparency = 1 - b

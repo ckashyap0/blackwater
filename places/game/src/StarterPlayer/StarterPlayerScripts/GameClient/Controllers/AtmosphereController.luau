@@ -735,6 +735,9 @@ function Controller:Start()
  pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.MartyNPC).Start()end) -- (R34) Marty at the works gate: idle clip, turns to whoever talks to him
  pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.MartyTalk).Start()end) -- (R34) talking to Marty (StarterGui.MartyTalk, same look as Hale's)
  pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.DropFall).Start()end) -- (R36) other players' dropped keycard falls smoothly on this screen
+ pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.MobilePerf).Start()end) -- (R37) lighter Floor 4 on phones (minor light shadows off, half-rate particles)
+ pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.MartyPeek).Start()end) -- (R37) Marty peeking round a corner, for one player at a time
+ pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.GateCut).Start()end) -- (R37) Level 5 shaft gate opening: short cut to the gate for the whole crew
   task.spawn(function()
    while self._scope do
     local runtime=workspace:FindFirstChild('Runtime');local env=runtime and runtime:FindFirstChild('DescentEnvironment')

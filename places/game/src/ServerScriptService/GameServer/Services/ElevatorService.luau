@@ -1011,7 +1011,7 @@ end
 function Service:_EndBoarding()
 	if self._surfaceCard then pcall(function()self._inventory:RetireFloor("Surface")end);self._surfaceCard=nil end
 	self._boarding=nil
-	for _,p in self._players:GetPlayers()do if typeof(p)=="Instance" and p:IsA("Player") then p:SetAttribute("EHInCar",nil);p:SetAttribute("EHCarSeat",nil);p:SetAttribute("EHKeycard",nil);p:SetAttribute("EHSurfaceKit",nil);p:SetAttribute("EHMartyTalkedGate",nil) end end
+	for _,p in self._players:GetPlayers()do if typeof(p)=="Instance" and p:IsA("Player") then p:SetAttribute("EHInCar",nil);p:SetAttribute("EHCarSeat",nil);p:SetAttribute("EHKeycard",nil);p:SetAttribute("EHSurfaceKit",nil);p:SetAttribute("EHMartyTalkedGate",nil);p:SetAttribute("EHMartyTalkedShaft",nil);p:SetAttribute("EHMartyTalkedLift",nil) end end
 	for _,p in self._players:GetPlayers()do if typeof(p)=="Instance" and p:IsA("Player") then p.RespawnLocation=self._environment.Spawn end end
 	if self._yard then self._yard:Destroy();self._yard=nil end
 	self._cabin:SetAttribute("Boarding",nil);self._cabin:SetAttribute("ArrivalCar",nil);if self._players==Players then game.ReplicatedStorage.Game:SetAttribute("SurfaceBoarding",nil) end
@@ -1299,6 +1299,8 @@ function Service:Start()
 		end
 		self._scope:Add(CS:GetInstanceAddedSignal("MartyNPC"):Connect(onMarty))
 		for _,m in CS:GetTagged("MartyNPC")do onMarty(m) end
+		-- (R37) where Marty stands: he moves ahead of the crew unseen in the yard, and leaves Level 5 after the gate
+		pcall(function()require(script.Parent.MartyDirector).Start(self)end)
 		-- hold-E on the main gate (see _GateHandle)
 		local network=game.ReplicatedStorage.Game:FindFirstChild("Network")
 		if network then

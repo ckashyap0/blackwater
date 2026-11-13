@@ -83,7 +83,7 @@ local function setup(model)
 	local base = mesh.CFrame
 	local yaw = yawOf(base.LookVector)
 	local upright = CFrame.new(base.Position) * CFrame.Angles(0, yaw, 0)
-	return {model = model, mesh = mesh, bones = bones, tracks = tracks, length = length, base = base,
+	return {serial = model:GetAttribute('SpotSerial'), model = model, mesh = mesh, bones = bones, tracks = tracks, length = length, base = base,
 		offset = upright:ToObjectSpace(model:GetPivot()), lastYaw = yaw,
 		baseYaw = yaw, yaw = yaw, vyaw = 0, t0 = math.random() * 3, holdUntil = 0, nod = 0, vnod = 0}
 end
@@ -98,6 +98,8 @@ function M.Start()
 		for _, model in CS:GetTagged('MartyNPC') do
 			if not model:IsDescendantOf(workspace) then continue end
 			local s = state[model]
+			-- (R37) the server moved him to his next spot (SpotSerial): start again from where he now stands
+			if s and model:GetAttribute('SpotSerial') ~= s.serial then s = nil end
 			if s == nil then s = setup(model) or false; state[model] = s end
 			if not s or not s.mesh.Parent then continue end
 			if cam and (cam.CFrame.Position - s.mesh.Position).Magnitude > 160 then continue end
@@ -129,6 +131,15 @@ function M.Start()
 			s.yaw, s.vyaw = spring(s.yaw, s.vyaw, s.yaw + wrap(bodyGoal - s.yaw), 2.6, dt)
 			s.yaw = wrap(s.yaw)
 			local headGoal = engaged and math.clamp(wrap(targetYaw - s.yaw), math.rad(-60), math.rad(60)) or 0
+			-- (R37) not talking, but you are close: only his head follows you (his body stays where it is)
+			if not engaged and root then
+				local d = root.Position - s.mesh.Position
+				local flat = Vector3.new(d.X, 0, d.Z)
+				if flat.Magnitude < 12 and flat.Magnitude > .5 then
+					local off = wrap(yawOf(flat) - s.yaw)
+					if math.abs(off) < math.rad(100) then headGoal = math.clamp(off, math.rad(-50), math.rad(50)) end
+				end
+			end
 			s.head = s.head or 0; s.vhead = s.vhead or 0
 			s.head, s.vhead = spring(s.head, s.vhead, headGoal, 7, dt)
 			if math.abs(wrap(s.yaw - s.lastYaw)) > 1e-4 then
