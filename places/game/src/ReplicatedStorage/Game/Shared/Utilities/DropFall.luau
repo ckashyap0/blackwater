@@ -15,9 +15,11 @@ local falling = {}
 
 local function ease(x) x = math.clamp(x, 0, 1) return x * x end -- gravity: slow at the top, fast at the end
 
+local watched = setmetatable({}, {__mode = 'k'})
 local function watch(part)
-	if not part:IsA('BasePart') then return end
-	part:GetAttributeChangedSignal('EHFallAt'):Connect(function()
+	if not part:IsA('BasePart') or watched[part] then return end
+	watched[part] = true
+	local function onFall()
 		local at, from, by = part:GetAttribute('EHFallAt'), part:GetAttribute('EHFallFrom'), part:GetAttribute('EHFallBy')
 		if type(at) ~= 'number' or typeof(from) ~= 'CFrame' then return end
 		local me = Players.LocalPlayer
@@ -30,7 +32,9 @@ local function watch(part)
 		local dur = math.clamp(math.sqrt(2 * h / workspace.Gravity) * 1.25, .22, .6)
 		falling[part] = {from = from, to = to, at = at, dur = dur}
 		part.CFrame = from
-	end)
+	end
+	part:GetAttributeChangedSignal('EHFallAt'):Connect(onFall)
+	onFall() -- (the drop may already be set when the item gets its tag)
 end
 
 function M.Start()

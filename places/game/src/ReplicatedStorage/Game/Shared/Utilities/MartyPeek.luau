@@ -154,7 +154,7 @@ function M.Start()
 					local _, dot = visibleFrom(cam, marker.Position + Vector3.new(0, 6, 0), {player.Character})
 					if dot < AWAY_COS then
 						local m = place(marker)
-						if m then done[marker] = true; active = {marker = marker, model = m, phase = 'wait', seenFor = 0} end
+						if m then done[marker] = true; active = {marker = marker, model = m, phase = 'wait', seenFor = 0}; break end
 					end
 				end
 			end

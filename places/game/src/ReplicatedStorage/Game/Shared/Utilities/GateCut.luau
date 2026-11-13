@@ -58,10 +58,12 @@ function M.Start()
 				for _, m in env:GetChildren() do
 					if m:GetAttribute('EncounterId') == 'Level5' and not seen[m] then
 						seen[m] = true
-						m:GetAttributeChangedSignal('ReturnGateOpenedAt'):Connect(function()
+						local function check()
 							local at = m:GetAttribute('ReturnGateOpenedAt')
 							if type(at) == 'number' and workspace:GetServerTimeNow() - at < 2 then play(m) end
-						end)
+						end
+						m:GetAttributeChangedSignal('ReturnGateOpenedAt'):Connect(check)
+						check() -- (the gate may have opened just before this floor was found)
 					end
 				end
 			end
