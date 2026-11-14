@@ -432,16 +432,27 @@ function M.Play(opts)
  if opts.cover then task.defer(function()if opts.cover.Parent then opts.cover:Destroy() end end) end
  player:SetAttribute('EHCinematic',true)
  local prompt=tpl.SkipPrompt:Clone();prompt.GroupTransparency=1;prompt.Parent=gui
- do local touch=game:GetService('UserInputService').TouchEnabled and not game:GetService('UserInputService').KeyboardEnabled
-  prompt.Button.Key.Text=touch and 'TAP' or 'SPACE';prompt.Button.Label.Text=touch and 'to skip' or 'Hold to skip' end
+ -- (Nov 13) the SPACE key chip only on a computer; phones, tablets and controllers just read "Skip"
+ do local pc=game:GetService('UserInputService').PreferredInput==Enum.PreferredInput.KeyboardAndMouse
+  prompt.Button.Key.Visible=pc;prompt.Button.Key.Text='SPACE';prompt.Button.Label.Text=pc and 'Hold to skip' or 'Skip' end
  local skipReq=false
- prompt.Button.Activated:Connect(function()skipReq=true end)
+ -- (Nov 13) a skip is for the whole crew: it goes to the server (ArrivalSkip), which publishes
+ -- ArrivalTextSkipAt on the yard; every screen then fades its current line out and goes on to the drive
+ local skipAll=false
+ local function askSkip()
+  local net=game.ReplicatedStorage.Game:FindFirstChild('Network');local r=net and net:FindFirstChild('ArrivalSkip')
+  if r then r:FireServer() else skipReq=true end
+ end
+ local function yardNow()local rt=workspace:FindFirstChild('Runtime');return rt and rt:FindFirstChild('SurfaceYard',true) end
+ prompt.Button.Activated:Connect(askSkip)
  CAS:BindActionAtPriority('BWArrivalSkip',function(_,st)
   -- (Nov 13) HOLD to skip: half a second on the key, so a stray tap never skips a line
-  if st==Enum.UserInputState.Begin then local token={};M._skipHold=token;task.delay(.5,function()if M._skipHold==token then skipReq=true end end)
+  if st==Enum.UserInputState.Begin then local token={};M._skipHold=token;task.delay(.5,function()if M._skipHold==token then askSkip() end end)
   elseif st==Enum.UserInputState.End or st==Enum.UserInputState.Cancel then M._skipHold=nil end
   return Enum.ContextActionResult.Sink end,false,Enum.ContextActionPriority.High.Value+50,Enum.KeyCode.Space,Enum.KeyCode.ButtonA)
- local function unbindSkip()pcall(function()CAS:UnbindAction('BWArrivalSkip')end);if prompt.Parent then prompt:Destroy() end end
+ -- (Nov 13) the prompt always eases out, never just vanishes
+ local function unbindSkip()pcall(function()CAS:UnbindAction('BWArrivalSkip')end)
+  if prompt.Parent then local tw=game:GetService('TweenService'):Create(prompt,TweenInfo.new(.4,Enum.EasingStyle.Quad),{GroupTransparency=1});tw:Play();tw.Completed:Connect(function()if prompt.Parent then prompt:Destroy() end end) end end
  local done=false
  local orig,passengers,conn,engine,folder,hid=nil,{},nil,nil,nil,false
  local camera=workspace.CurrentCamera;local fov0=camera.FieldOfView
@@ -543,7 +554,9 @@ function M.Play(opts)
     local tx=os.clock()-txBase;local line=M.Lines[cur]
     local sc=sched[cur]
     if not lineEnd then lineEnd=lineStart+sc.total+T.lineHold;typedN,lineReturned=0,false end
+    if not skipAll then local y=yardNow();if y and y:GetAttribute('ArrivalTextSkipAt') then skipAll=true;skipReq=true end end
     if skipReq then skipReq=false;if tx>=lineStart then lineEnd=math.min(lineEnd,tx) end end
+    if skipAll and tx>=lineStart then lineEnd=math.min(lineEnd,tx) end
     for i,l in lines do l.Visible=i==cur and tx>=lineStart end
     local l=lines[cur];local n=0
     while n<#line and sc.at[n+1]<=tx-lineStart do n+=1 end
@@ -560,10 +573,13 @@ function M.Play(opts)
     local out=tx<lineEnd and 0 or smooth((tx-lineEnd)/T.textFade)
     l.TextTransparency=out
     l.Position=linePos -- (Nov 8) fades in place, no drop
-    local pv=tx>=lineStart+.25 and tx<lineEnd
+    -- (Nov 13) the prompt stays up through all the lines (it used to blink out between every line) and
+    -- eases out as the last line goes, or as soon as the crew has skipped
+    local pv=not skipAll and (cur>1 or tx>=lineStart+.25) and not (cur==#M.Lines and tx>=lineEnd)
     if prompt.Parent then prompt.GroupTransparency+=((pv and 0 or 1)-prompt.GroupTransparency)*(1-math.exp(-dt*(pv and 6 or 14))) end
     if tx>=lineEnd+T.textFade then
      l.Visible=false;cur+=1;lineEnd=nil;lineStart=tx+T.lineGap
+     if skipAll then cur=#M.Lines+1 end -- (skipped: no more lines, straight on to the drive)
      if cur>#M.Lines then textDone=true;unbindSkip();if t<T.driveAt then base=os.clock()-T.driveAt;t=T.driveAt end end
     end
     if not textDone and t>=T.driveAt then t=T.driveAt-.001;base=os.clock()-t end -- the drive waits for the words
