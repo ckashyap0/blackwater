@@ -89,7 +89,12 @@ function Service:_Doors(alpha)
 	for _,side in {-1,1}do
 		local door=Refs.Get(self._cabin,side<0 and "LeftDoor" or "RightDoor")
 		local base=self._doorFrames and self._doorFrames[door.Name] or CFrame.new(side*3.9,25.5,-8)
-		door.CFrame=base*CFrame.new(side*(door:GetAttribute("TravelDistance") or 7.8)*(self._alpha*self._alpha*(3-2*self._alpha)),0,0)
+		-- (Nov 13, Ryan: the lift door 'glitched and collided') the server only ever writes the two
+		-- resting spots. Mid-slide every client moves its own copy on one smooth curve (ArrivalController
+		-- _Doors); the server used to write a second, different curve every step, the two fought, and the
+		-- invisible collision leaf jittered and shoved players. Same rest positions as before.
+		local rest=(self._alpha<=0 and 0) or (self._alpha>=1 and 1) or nil
+		if rest then door.CFrame=base*CFrame.new(side*(door:GetAttribute("TravelDistance") or 7.8)*rest,0,0) end
 		door.CanCollide=self._alpha<.98
 	end
 end
@@ -707,7 +712,20 @@ function Service:_YardGate(s,b)
 			-- open: close behind the crew once everyone has been through and clear of the leaves a moment
 			local longest=0;for _,m in gateLeaves(yard)do longest=math.max(longest,m:GetAttribute("SwingSeconds") or 3.4) end
 			local settled=now-openedAt>GATE_DELAY+longest+3
-			b.gateClear=(settled and outside==0 and inside>0 and not nearLeaves) and (b.gateClear or 0)+dt or 0
+			-- (Nov 13) the gate only shuts once Marty has introduced himself to someone and finished talking:
+			-- he is gone while every camera is on the closing gate (MartyDirector), and you remark on it after
+			local introDone=false
+			local okT,Talk=pcall(require,game.ReplicatedStorage.Game.Shared.Utilities.MartyTalk)
+			for _,p in game:GetService("Players"):GetPlayers()do
+				local at=p:GetAttribute("EHMartyTalkAt")
+				if p:GetAttribute("EHMartyTalkedGate") and type(at)=="number" and okT and now>at+Talk.Duration(p:GetAttribute("EHMartyTalkSet"))+.5 then introDone=true end
+			end
+			local busy=false
+			for _,p in game:GetService("Players"):GetPlayers()do
+				local at=p:GetAttribute("EHMartyTalkAt")
+				if type(at)=="number" and okT and now<at+Talk.Duration(p:GetAttribute("EHMartyTalkSet"))+.5 then busy=true end
+			end
+			b.gateClear=(settled and outside==0 and inside>0 and not nearLeaves and introDone and not busy) and (b.gateClear or 0)+dt or 0
 			if b.gateClear>=GATE_CLEAR_SECONDS then
 				b.gateClear=0;b.hasClosed=true;yard:SetAttribute("GateClosedAt",now);self:_SwingGate(yard,true)
 			end
@@ -1331,6 +1349,9 @@ function Service:Start()
 				if not rec or rec.connectionState~="Connected" then return end
 				self._carVotes=self._carVotes or {};self._carVotes[tostring(player.UserId)]=true
 				player:SetAttribute("EHCarSkipVoted",b.carAt)
+				-- (Nov 13) one player holding SPACE skips the opening lines for the whole crew: every screen fades
+				-- the line it is on out as usual and goes straight on to the drive (ArrivalDrive watches this)
+				if not yard:GetAttribute("ArrivalTextSkipAt") then yard:SetAttribute("ArrivalTextSkipAt",workspace:GetServerTimeNow()) end
 			end))
 		end
 	end
