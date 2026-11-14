@@ -658,6 +658,23 @@ function M.PlayGate(opts)
  -- (R36) where the crane starts: just before the car leaves the access road for the car park
  local sTurn=L*.6
  for k=0,L,1 do if path:pos(k).Z>=-314 then sTurn=k;break end end
+ -- (R39) the same camera language as the opening drive: wide, fixed and plainly third person. Shot 1 is the
+ -- high camera beside the gatehouse (the one that watched the car pull up); shot 2 stands low on the verge
+ -- OUTSIDE the turn into the car park and cranes up and back as the car swings past it into the bay.
+ local GH0,GH1=Vector3.new(-3,114,-359)+DY,Vector3.new(-2.4,113,-362)+DY
+ local TP=path:pos(sTurn);local TD=path:dir(sTurn);local TR=TD:Cross(Vector3.yAxis).Unit
+ local tside=TR:Dot(endCF.Position-TP)>=0 and 1 or -1
+ local CR0,CR1
+ do
+  local rp=RaycastParams.new();rp.FilterType=Enum.RaycastFilterType.Exclude;rp.FilterDescendantsInstances={orig}
+  local function clear(from,want)
+   local h=workspace:Raycast(from,want-from,rp)
+   return h and from+(want-from).Unit*math.max(h.Distance-1.5,2) or want
+  end
+  local eye=TP+Vector3.new(0,2,0)
+  CR0=clear(eye,eye-TR*tside*11+TD*3)
+  CR1=clear(eye,eye-TR*tside*17-TD*3+Vector3.new(0,12,0))
+ end
  local folder=Instance.new('Folder');folder.Name='ArrivalDriveLocal';folder.Parent=workspace
  lampShadows(yard,true)
  local copy,parts=copyCar(orig,folder)
@@ -683,7 +700,6 @@ function M.PlayGate(opts)
  local engine=engineFor(copy,folder)
  local armSound
  local sfxDone={}
-local G1,G1b=Vector3.new(-6.8,105.4,-359.5)+DY,Vector3.new(-6.2,105.0,-361.5)+DY -- (the whole arm across the frame, the car behind it)
  local camPos,camLook,steer,lastShot=nil,nil,0,nil
  local done=false
  local conn
@@ -755,22 +771,16 @@ local ak=smoother((t-G.armAt)/G.armLen)
   local shot=t<tSwitch and 1 or 2
   local wantPos,wantLook
   if shot==1 then
-   G._lookA=nil;wantPos=G1:Lerp(G1b,smooth((t-G.reveal)/(tSwitch-G.reveal)))
+   -- from above the gatehouse side: the barrier swings up, then the camera follows the car away up the road
+   wantPos=GH0:Lerp(GH1,smooth((t-G.reveal)/math.max(tSwitch-G.reveal,.1)))
    local gateMid=Vector3.new(1.5,104.0,-373)+DY
    wantLook=gateMid:Lerp(target,smooth((t-G.armAt)/(G.driveAt+1.5-G.armAt)))
   else
-   -- (R36) third person, theatrical: a low camera trails the car up the access road with the headlights
-   -- cutting the rain ahead, then cranes up and out as it turns into the facility and parks.
-   local fwd=cf.LookVector
-   local chasePos=cf.Position-fwd*12+Vector3.new(0,2.4,0)
-   local chaseLook=cf.Position+fwd*10+Vector3.new(0,1.4,0)
-   local k=smoother((s-sTurn)/math.max(L-sTurn,1))
-   local cranePos=endCF.Position+Vector3.new(14,18,-14)
-   wantPos=chasePos:Lerp(cranePos,k);wantLook=chaseLook:Lerp(target,k)
-   camera.FieldOfView=48+12*k
+   local q=smooth((t-tSwitch)/math.max(G.DRIVE_END-tSwitch,.1))
+   wantPos=CR0:Lerp(CR1,q);wantLook=target
   end
   if shot~=lastShot or not camPos then camPos,camLook=wantPos,wantLook;lastShot=shot end
-  camPos=camPos:Lerp(wantPos,1-math.exp(-dt*10));camLook=camLook:Lerp(wantLook,1-math.exp(-dt*7))
+  camPos=camPos:Lerp(wantPos,1-math.exp(-dt*6));camLook=camLook:Lerp(wantLook,1-math.exp(-dt*7))
   cullFar(camPos)
   camera.CFrame=CFrame.lookAt(camPos,camLook)
  end)
