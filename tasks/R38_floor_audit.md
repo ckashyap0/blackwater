@@ -27,3 +27,9 @@ ConcreteBay16, FloorBay16, Duct, VentCover, VentGrate, DoorJambBay, Distribution
 2. Rows 4 to 7 as one Blender batch (pipe kit), imported via Open Cloud, swapped with `ServerStorage.BackupR38` copies.
 3. Rows 8 to 10 if time allows.
 Not checked: how the floors look in Play (no screen capture this pass).
+
+## Done 2026-11-13/14 (rows 1 to 3, Studio only)
+- Row 1: 8 LiveWires now use one smooth Blender cable each (`Cable` MeshPart; asset 105146981825639, kit `ServerStorage.R38_LiveCableKit`, vault `Assets/Models/BW_F4_LiveCable.fbx`). Shapes LWShape1/3/5, sized to the old path. SparkTip, BareEnd, TornGland kept. Old segments in `ServerStorage.BackupR38.LiveWire_<n>`.
+- Rows 2 and 3: ControlRoomTasks and ControlRoomHud restyled in place: corners 2 px, strokes warm grey 5c5850, red e1342e -> b03028, dark red 581210 -> 3a1411, BuilderSans/Arial -> RobotoMono Bold (titles) / GothamSSm Medium (body), white -> f0efe0, JobList header slab removed (thin red rule only), task window solid 0f1011 with a stroke. The green phosphor Upload screen is unchanged. Backups `ServerStorage.BackupR38UI`.
+- Not done: `ControlRoomController` WRED constant (code still 225,52,46). Studio copy differs from git (709 chars longer); sync Studio -> git before editing it.
+- Tested: playtest console clean, Level 4 template has 8 cables, both GUIs load. Not looked at in Play by eye.
