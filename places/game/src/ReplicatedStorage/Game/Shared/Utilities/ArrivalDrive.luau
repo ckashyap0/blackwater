@@ -28,19 +28,38 @@ local function typeSchedule(line,seed)
  local rng=Random.new(seed);local at,t={},0
  for i=1,#line do
   local prev=i>1 and string.sub(line,i-1,i-1) or ''
-  local dt=(1/T.cps)*(.6+rng:NextNumber()*.9)
-  if prev=='.' or prev==',' or prev=='?' or prev=='!' then dt+=.24 elseif prev==' ' then dt+=.03 end
+  -- (Nov 13) a steadier hand: letters inside a word land close together, a small beat between words, a longer
+  -- one after punctuation, and now and then a short hesitation
+  local dt=(1/T.cps)*(.8+rng:NextNumber()*.4)
+  if prev=='.' or prev=='?' or prev=='!' then dt+=.32 elseif prev==',' then dt+=.2 elseif prev==' ' then dt+=.05 end
+  if rng:NextNumber()<.06 then dt+=.1 end
   t+=dt;at[i]=t
  end
  return {at=at,total=t}
 end
 local typeRng=Random.new()
 local function typeStrike(soft,speed)
- local s=Instance.new('Sound');s.SoundId='rbxassetid://'..TYPE_IDS[typeRng:NextInteger(1,#TYPE_IDS)]
- s.Volume=TYPE_VOL*(soft and .55 or 1)*(.85+typeRng:NextNumber()*.3);s.PlaybackSpeed=(speed or 1)*(.94+typeRng:NextNumber()*.12)
- s.PlaybackRegionsEnabled=true;s.PlaybackRegion=NumberRange.new(0,TYPE_CLIP)
- s.Parent=game:GetService('SoundService');s:Play();task.delay(.8,function()s:Destroy()end)
+ -- (Nov 13) the strokes are loaded once and replayed, so each one sounds the instant its letter appears
+ -- (a new Sound per letter had to load first and landed late)
+ local pool=M._typePool or M.PreloadType()
+ local i=typeRng:NextInteger(1,#pool);if i==M._typeLast then i=i%#pool+1 end;M._typeLast=i
+ local s=pool[i]
+ s.Volume=TYPE_VOL*(soft and .4 or 1)*(.85+typeRng:NextNumber()*.3);s.PlaybackSpeed=(speed or 1)*(.94+typeRng:NextNumber()*.12)
+ s.TimePosition=0;s:Play()
 end
+function M.PreloadType()
+ if M._typePool then return M._typePool end
+ local pool={}
+ for _,id in TYPE_IDS do
+  local s=Instance.new('Sound');s.Name='TypeStroke';s.SoundId='rbxassetid://'..id
+  s.PlaybackRegionsEnabled=true;s.PlaybackRegion=NumberRange.new(0,TYPE_CLIP);s.Parent=game:GetService('SoundService')
+  table.insert(pool,s)
+ end
+ M._typePool=pool
+ task.spawn(function()pcall(function()game:GetService('ContentProvider'):PreloadAsync(pool)end)end)
+ return pool
+end
+if game:GetService('RunService'):IsClient() then task.defer(M.PreloadType) end
 M.TypeStrike=typeStrike
 local DRIVE_END=T.driveAt+T.cruise+T.drive
 local FADE_AT=DRIVE_END+T.park
@@ -413,10 +432,15 @@ function M.Play(opts)
  if opts.cover then task.defer(function()if opts.cover.Parent then opts.cover:Destroy() end end) end
  player:SetAttribute('EHCinematic',true)
  local prompt=tpl.SkipPrompt:Clone();prompt.GroupTransparency=1;prompt.Parent=gui
- prompt.Button.Key.Text=(game:GetService('UserInputService').TouchEnabled and not game:GetService('UserInputService').KeyboardEnabled) and 'TAP' or '[SPACE]'
+ do local touch=game:GetService('UserInputService').TouchEnabled and not game:GetService('UserInputService').KeyboardEnabled
+  prompt.Button.Key.Text=touch and 'TAP' or 'SPACE';prompt.Button.Label.Text=touch and 'to skip' or 'Hold to skip' end
  local skipReq=false
  prompt.Button.Activated:Connect(function()skipReq=true end)
- CAS:BindActionAtPriority('BWArrivalSkip',function(_,st)if st==Enum.UserInputState.Begin then skipReq=true end;return Enum.ContextActionResult.Sink end,false,Enum.ContextActionPriority.High.Value+50,Enum.KeyCode.Space,Enum.KeyCode.ButtonA)
+ CAS:BindActionAtPriority('BWArrivalSkip',function(_,st)
+  -- (Nov 13) HOLD to skip: half a second on the key, so a stray tap never skips a line
+  if st==Enum.UserInputState.Begin then local token={};M._skipHold=token;task.delay(.5,function()if M._skipHold==token then skipReq=true end end)
+  elseif st==Enum.UserInputState.End or st==Enum.UserInputState.Cancel then M._skipHold=nil end
+  return Enum.ContextActionResult.Sink end,false,Enum.ContextActionPriority.High.Value+50,Enum.KeyCode.Space,Enum.KeyCode.ButtonA)
  local function unbindSkip()pcall(function()CAS:UnbindAction('BWArrivalSkip')end);if prompt.Parent then prompt:Destroy() end end
  local done=false
  local orig,passengers,conn,engine,folder,hid=nil,{},nil,nil,nil,false
