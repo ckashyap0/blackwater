@@ -666,10 +666,17 @@ function M.PlayGate(opts)
  local tside=TR:Dot(endCF.Position-TP)>=0 and 1 or -1
  local CR0,CR1
  do
-  local rp=RaycastParams.new();rp.FilterType=Enum.RaycastFilterType.Exclude;rp.FilterDescendantsInstances={orig}
+  -- stop short of real scenery only: the yard's invisible colliders (NoClimb walls, the checkpoint blocker) are skipped
   local function clear(from,want)
-   local h=workspace:Raycast(from,want-from,rp)
-   return h and from+(want-from).Unit*math.max(h.Distance-1.5,2) or want
+   local ex={orig}
+   for _=1,12 do
+    local rp=RaycastParams.new();rp.FilterType=Enum.RaycastFilterType.Exclude;rp.FilterDescendantsInstances=ex
+    local h=workspace:Raycast(from,want-from,rp)
+    if not h then return want end
+    if h.Instance.Transparency<.9 then return from+(want-from).Unit*math.max(h.Distance-1.5,2) end
+    table.insert(ex,h.Instance)
+   end
+   return want
   end
   local eye=TP+Vector3.new(0,2,0)
   CR0=clear(eye,eye-TR*tside*11+TD*3)
