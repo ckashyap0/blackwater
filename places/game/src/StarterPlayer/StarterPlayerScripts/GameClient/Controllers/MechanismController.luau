@@ -242,9 +242,11 @@ function Controller:Init()self._scope=Scope.new()end
 local function floorOf(inst)local a=inst.Parent;while a and a~=workspace do if a:GetAttribute('EncounterId')then return a end;a=a.Parent end end
 function Controller:_Track(m)
  if self._leaves[m] or not m:IsA('Model') or not m:GetAttribute('OpenOffset') then return end
- local core=m.PrimaryPart;local closed=core and core:GetAttribute('ClosedFrame')
- if not closed then return end
- self._leaves[m]={closed=closed,floor=floorOf(m),key=(m:GetAttribute('MechanismOf') or 'Gate')..'OpenedAt'}
+ local core=m.PrimaryPart
+ if not core or not core:GetAttribute('ClosedFrame') then return end
+ -- (R39) the closed pose is where the leaf is now, on this copy of the floor. ClosedFrame is the authoring
+ -- position; floors are cloned elsewhere at run time, so snapping to it made the gate (grate and all) vanish.
+ self._leaves[m]={closed=m:GetPivot(),floor=floorOf(m),key=(m:GetAttribute('MechanismOf') or 'Gate')..'OpenedAt'}
 end
 function Controller:Start()
  local function scan(root)for _,d in root:GetDescendants()do if d:IsA('Model')and d:GetAttribute('OpenOffset')then self:_Track(d)elseif d:IsA('Model') and d:GetAttribute('YardGate') then self:_TrackSwing(d)elseif d:IsA('BasePart') and d:GetAttribute('SwingDegrees') then self:_TrackLever(d)end end end
@@ -324,6 +326,8 @@ function Controller:Start()
    if not m.Parent or not m:IsDescendantOf(workspace)then self._leaves[m]=nil;continue end
    s.floor=s.floor or floorOf(m)
    local at=s.floor and s.floor:GetAttribute(s.key)
+   -- (until it opens, keep following the server's pose: the floor may still be moved into place)
+   if not at then s.closed=m:GetPivot();s.a=0;continue end
    local secs=m:GetAttribute('OpenSeconds')or 2.4
    local a=at and math.clamp((now-at)/secs,0,1)or 0
    if a~=s.a then
