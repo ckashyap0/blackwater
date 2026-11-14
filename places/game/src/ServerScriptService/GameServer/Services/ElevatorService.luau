@@ -1170,6 +1170,11 @@ function Service:_Debug(cmd)
 		if f.TestLift then f._stage=6;f:TestLift() elseif s.objectiveSnapshot.status~="Completed" then self:_Command("CompleteObjective");f._state="Completed" end
 		task.wait(.2)
 		local ok,code=self:RequestDeparture();return tostring(ok).." "..tostring(code)
+	elseif cmd=="GateDrive" then
+		-- (R39) straight to the drive through the barrier (skips the check-in talk), for testing the cutscene
+		if not self._yard or not self._boarding then return "NoYard" end
+		if not self._yard:GetAttribute("CheckedInAt") then self._yard:SetAttribute("CheckedInAt",workspace:GetServerTimeNow()) end
+		self:_AllIntoCar();return "GateDriveAt "..tostring(self._yard:GetAttribute("GateDriveAt"))
 	elseif cmd=="Hurt" then
 		-- a lethal Attack on the first player: Extra Life, downed, revive and wipe can be tested before a floor can hurt anyone
 		local p=self._players:GetPlayers()[1];if not p then return "NoPlayer" end
