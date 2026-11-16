@@ -113,33 +113,48 @@ function Controller:_Target()
 		table.insert(ignore,hit.Instance);params.FilterDescendantsInstances=ignore
 		hit=workspace:Raycast(camera.CFrame.Position,ray.Direction*12,params)
 	end
+	-- (RV2 Nov 11, Ryan: tool pickups were too strict) a target tagged EHAimAssist=<studs> also counts when
+	-- the aim passes within that many studs of its box - but never through a wall: the padded box must be
+	-- reached before (or within 0.75 studs of) whatever the plain ray hit first.
+	local assisted=self:_AimAssist(camera.CFrame.Position,ray.Direction.Unit,root,hit)
+	if assisted then return assisted end
 	if not hit then return nil end
 	-- Mops hang (or lie) close together and their grab boxes are generous: of all the mop grab boxes
 	-- the aim passes through, take the one whose mop is closest to the aim line - the mop you are
 	-- actually looking at, not whichever box the ray happened to enter first.
-	if hit.Instance.Name=="MopHitbox" then
-		local o,d=camera.CFrame.Position,ray.Direction.Unit
-		local best,bestD=hit.Instance,math.huge
-		for cand in self._targets do
-			if cand.Name=="MopHitbox" and cand.Parent and cand:IsDescendantOf(workspace) and cand:GetAttribute("EHInteractionEnabled")==true then
-				local l=cand.CFrame:PointToObjectSpace(o);local ld=cand.CFrame:VectorToObjectSpace(d);local h=cand.Size/2
-				-- does the aim line pass through this box (within reach)?
-				local t0,t1=0,12
-				for _,ax in {"X","Y","Z"} do
-					local p,v,e=l[ax],ld[ax],h[ax]
-					if math.abs(v)<1e-6 then if math.abs(p)>e then t0=math.huge end
-					else local a,b=(-e-p)/v,(e-p)/v;if a>b then a,b=b,a end;t0=math.max(t0,a);t1=math.min(t1,b) end
-				end
-				if t0<=t1 then
-					-- distance from the aim line to the mop's own centre line (its long axis)
-					local c=cand.Position;local axis=cand.CFrame.UpVector
-					local w=c-o;local along=w:Dot(d);local perp=(w-d*along)
-					local dist=(perp-axis*perp:Dot(axis)).Magnitude
-					if dist<bestD then best,bestD=cand,dist end
+	-- (Nov 13) MOPS: the mops lean against the wall and stand close together, but their grab boxes are upright,
+	-- so picking by the box picked the wrong mop. Now, whenever the aim is on or near any mop, the mop whose
+	-- actual SHAFT (the leaning handle, from the head to the top) passes closest to the aim line is the one
+	-- you get, as long as the aim is within MOP_REACH studs of it and nothing solid is in front of it.
+	do
+		local mopNear=hit.Instance.Name=="MopHitbox" or (hit.Instance.Parent and hit.Instance.Parent.Name=="Mop" and hit.Instance.Parent:FindFirstChild("MopHitbox")~=nil)
+		if mopNear then
+			local o,d=camera.CFrame.Position,ray.Direction.Unit
+			local blockT=(hit.Position-o):Dot(d)+.75
+			local best,bestD=nil,.9 -- MOP_REACH
+			for cand in self._targets do
+				if cand.Name=="MopHitbox" and cand.Parent and cand:IsDescendantOf(workspace) and cand:GetAttribute("EHInteractionEnabled")==true then
+					local h=cand.Parent:FindFirstChild("Handle") or cand.Parent:FindFirstChild("MopWood")
+					if h and h:IsA("BasePart") then
+						local ax=h.CFrame.RightVector;local half=h.Size.X/2
+						local p0=h.Position-ax*(half+.5);local p1=h.Position+ax*half -- (a little past the bottom: the head)
+						-- closest approach between the aim ray (t in 0..12) and the shaft segment
+						local u=p1-p0;local w0=o-p0
+						local A,B,C,D,E=d:Dot(d),d:Dot(u),u:Dot(u),d:Dot(w0),u:Dot(w0)
+						local den=A*C-B*B
+						local t,sg
+						if den<1e-6 then t=0;sg=math.clamp(E/C,0,1) else
+							sg=math.clamp((A*E-B*D)/den,0,1)
+							t=math.clamp((B*sg-D)/A,0,12)
+							sg=math.clamp((t*B+E)/C,0,1)
+						end
+						local dist=((o+d*t)-(p0+u*sg)).Magnitude
+						if t<=blockT and dist<bestD then best,bestD=cand,dist end
+					end
 				end
 			end
+			if best then hit={Instance=best,Position=hit.Position} end
 		end
-		hit={Instance=best,Position=hit.Position}
 	end
 	local target=self._targets[hit.Instance] and hit.Instance or nil
 	if not target then
@@ -173,6 +188,33 @@ function Controller:_Target()
 	local at=target:GetAttribute("EHWholeModel") and hit.Position or target.Position
 	if (root.Position-at).Magnitude>(target:GetAttribute("EHMaximumDistance") or 8) then return nil end
 	return target
+end
+function Controller:_AimAssist(o,d,root,hit)
+	if hit and self._targets[hit.Instance] and hit.Instance:GetAttribute("EHInteractionEnabled")==true then return nil end
+	if self._player:GetAttribute("EHInVent")~=nil then return nil end
+	local reach=hit and (hit.Position-o).Magnitude+.75 or 12
+	local best,bestD=nil,math.huge
+	for cand in self._targets do
+		local slack=cand:GetAttribute("EHAimAssist")
+		if type(slack)=="number" and cand.Parent and cand:IsDescendantOf(workspace) and cand:GetAttribute("EHInteractionEnabled")==true then
+			local l=cand.CFrame:PointToObjectSpace(o);local ld=cand.CFrame:VectorToObjectSpace(d);local h=cand.Size/2+Vector3.new(slack,slack,slack)
+			local t0,t1=0,12
+			for _,ax in {"X","Y","Z"} do
+				local p,v,e=l[ax],ld[ax],h[ax]
+				if math.abs(v)<1e-6 then if math.abs(p)>e then t0=math.huge end
+				else local a,b=(-e-p)/v,(e-p)/v;if a>b then a,b=b,a end;t0=math.max(t0,a);t1=math.min(t1,b) end
+			end
+			if t0<=t1 and t0<=reach then
+				local dist=(cand.Position-o):Cross(d).Magnitude
+				if dist<bestD then best,bestD=cand,dist end
+			end
+		end
+	end
+	if not best then return nil end
+	if (root.Position-best.Position).Magnitude>(best:GetAttribute("EHMaximumDistance") or 8) then return nil end
+	if best:GetAttribute("EHNeedsMop") and not self._player:GetAttribute("EHCarryingMop") then return nil end
+	local needs=best:GetAttribute("EHNeedsKind");if needs and self._player:GetAttribute("EHCarriedKind")~=needs then return nil end
+	return best
 end
 function Controller:_Render()
 	local p=self._player;self._target=self:_Target()

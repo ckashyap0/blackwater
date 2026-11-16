@@ -45,14 +45,18 @@ M.Sets = {
 	},
 	L51 = {
 		{who = 'him', text = "Oh, hello there! Made it down alright?"},
-		{who = 'you', text = "Yeah. That lift is something."},
-		{who = 'him', text = "Isn't it? She groans, but she's never dropped anyone. Not yet, anyway."},
-		{who = 'him', text = "Everything okay? You look a little pale."},
-		{who = 'you', text = "I'm fine. What do we do first?"},
+		{who = 'you', text = "The lift just dropped! It slammed into the bottom!"},
+		{who = 'him', text = "Ah, yeah. She does that sometimes. Brakes catch late."},
+		{who = 'him', text = "You'll get used to it. Everyone does, eventually."},
+		{who = 'you', text = "...Right. What do we do first?"},
 		{who = 'him', text = "Start with the leaking pipe down the hall. Close the valve before the pressure climbs."},
 	},
 	L52 = {
 		{who = 'him', text = "Everything alright? Holler if you need me."},
+	},
+	-- (Nov 13) your own line once the main gate has shut behind you: he was standing just inside it a moment ago
+	Gone = {
+		{who = 'you', text = "Wow, he's already gone. That's weird."},
 	},
 }
 M.Speakers = {him = 'Marty', you = '{name}'}
@@ -137,9 +141,15 @@ function M.Start()
 	-- (R37) phones: a line too long for the box grows the box upward (up to 96 px more), then shrinks the text a
 	-- step at a time (never below 18), so a line is never cut off
 	local baseH, baseTS = box.Size.Y.Offset, line.TextSize
-	local fitting = false
+	local fitting, fitWait = false, 0
+	local Tick = require(script.Parent.DialogueTick); Tick.Preload()
+	local Fit = require(script.Parent.DialogueFit)
 	local function fitStep()
 		if not fitting then return end
+		-- (Nov 13) TextFits still describes the PREVIOUS line on the frame the text changes, so a long line was
+		-- waved through and cut off at the bottom of the box: wait for the layout before judging it
+		if fitWait > 0 then fitWait -= 1 return end
+		fitWait = 1
 		if line.TextFits then fitting = false return end
 		if box.Size.Y.Offset < baseH + 96 then
 			box.Size = UDim2.new(box.Size.X.Scale, box.Size.X.Offset, 0, box.Size.Y.Offset + 24)
@@ -174,6 +184,51 @@ function M.Start()
 	end
 	local function smooth(x) x = math.clamp(x, 0, 1) return x * x * (3 - 2 * x) end
 	local lastKey = nil
+	-- (Nov 13) the gate CLOSING shot (after his intro): Marty leaves while the camera is on the gate
+	-- (MartyDirector). When the camera comes back to your eyes you say so, once, on your own screen.
+	local goneFor = nil
+	-- (Nov 13) through the gate, the task bar points you at Marty until you have talked to him (the gate only
+	-- shuts behind the crew after his intro)
+	local okS, Sources = pcall(require, script.Parent:WaitForChild('ObjectiveSources', 5))
+	if okS and Sources then
+		Sources.Register('MartyIntro', function(p)
+			if p ~= player or player:GetAttribute('EHCinematic') or player:GetAttribute('EHMartyTalkedGate') then return nil end
+			local runtime = workspace:FindFirstChild('Runtime')
+			local yard = runtime and runtime:FindFirstChild('SurfaceYard', true)
+			if not yard or not yard:GetAttribute('GateOpenedAt') or yard:GetAttribute('GateClosedAt') then return nil end
+			local m
+			for _, x in CS:GetTagged('MartyNPC') do if x:IsDescendantOf(yard) then m = x break end end
+			if not m or (m:GetAttribute('TalkSets') or 'Gate') ~= 'Gate' then return nil end
+			return {key = yard, text = 'Talk to Marty', targets = {m}}
+		end)
+		-- (Nov 13) once the gate has shut and Marty has gone on ahead: up the road (the road barriers keep the
+		-- crew on it), find him at the shaft hall, then by the lift, then take the lift down
+		Sources.Register('MartyAhead', function(p)
+			if p ~= player or player:GetAttribute('EHCinematic') then return nil end
+			local runtime = workspace:FindFirstChild('Runtime')
+			local yard = runtime and runtime:FindFirstChild('SurfaceYard', true)
+			if not yard or not yard:GetAttribute('GateClosedAt') then return nil end
+			local m
+			for _, x in CS:GetTagged('MartyNPC') do if x:IsDescendantOf(yard) then m = x break end end
+			local spot = m and m:GetAttribute('TalkSets')
+			local key = yard
+			if spot == 'Shaft' and not player:GetAttribute('EHMartyTalkedShaft') then return {key = key, text = 'Follow the road and talk to Marty at the shaft hall', targets = {m}} end
+			if spot == 'Lift' and not player:GetAttribute('EHMartyTalkedLift') then return {key = key, text = 'Talk to Marty by the lift', targets = {m}} end
+			if spot == 'Lift' then return {key = key, text = 'Take the lift down', targets = {}} end
+			return nil
+		end)
+	end
+	player:GetAttributeChangedSignal('EHCinematic'):Connect(function()
+		if player:GetAttribute('EHCinematic') ~= nil then return end
+		local runtime = workspace:FindFirstChild('Runtime')
+		local yard = runtime and runtime:FindFirstChild('SurfaceYard', true)
+		local opened = yard and yard:GetAttribute('GateClosedAt')
+		if type(opened) ~= 'number' or goneFor == opened then return end
+		local now = workspace:GetServerTimeNow()
+		if now - opened < 1 or now - opened > 25 then return end
+		goneFor = opened
+		player:SetAttribute('EHMartyTalkSet', 'Gone'); player:SetAttribute('EHMartyTalkAt', now + .5)
+	end)
 	RunService.RenderStepped:Connect(function()
 		local at, set = player:GetAttribute('EHMartyTalkAt'), player:GetAttribute('EHMartyTalkSet')
 		local timeline = M.Timelines[set]
@@ -198,9 +253,11 @@ function M.Start()
 		local key = tostring(at) .. ':' .. i
 		if key ~= lastKey then
 			lastKey = key
-			box.Size = UDim2.new(box.Size.X.Scale, box.Size.X.Offset, 0, baseH); line.TextSize = baseTS; fitting = true
+			-- (Nov 13) sized exactly before it types (DialogueFit): never cut off on any screen
+			fitting = false
 			line.RichText = false
 			line.Text = (string.gsub(l.text, '{name}', player.Name))
+			task.spawn(Fit.Fit, box, line, line.Text, baseH, baseTS, 54) -- (54 = the box's 22 px inset + the 32 px speaker row above the line)
 			speaker.Text = (string.gsub(M.Speakers[l.who] or '', '{name}', player.Name))
 			if l.who == 'him' then buildMarty() end
 			face.Visible = l.who == 'you'; npcView.Visible = l.who == 'him'
@@ -208,6 +265,7 @@ function M.Start()
 		local n = utf8.len(line.ContentText) or #line.Text
 		fitStep()
 		line.MaxVisibleGraphemes = (k >= 1) and -1 or math.floor(n * k + .5)
+		Tick.Step(key, (k >= 1) and n or math.floor(n * k + .5), line.ContentText)
 		local b = smooth((t - first.shown) / .3) * smooth((last.finish - t) / .8) -- (R36) a slower, clearly visible fade out once the talk is done
 		box.GroupTransparency = 1 - b
 		box.Position = boxPos -- fades in place, as Hale's does (Nov 8)

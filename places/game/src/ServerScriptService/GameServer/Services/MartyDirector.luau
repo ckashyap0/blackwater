@@ -116,7 +116,14 @@ function M.Start(service)
 						local onward = talked(here.sets) or nearAny(stand.Position, 30)
 						-- (the crew is through the gate drive before the first move can happen)
 						if yard:GetAttribute('ArrivalCar') and not yard:GetAttribute('GateDriveDone') then onward = false end
-						if onward and not talking(now) and not seen(chest(marty), marty) and not seen(stand.Position + Vector3.new(0, 3, 0), marty) then
+						-- (Nov 13) after his intro the gate shuts behind the crew (ElevatorService waits for the talk to end);
+						-- every camera is on the closing gate, so he leaves his first spot then, seen or not (each player
+						-- then says "he's already gone": Utilities.MartyTalk, set Gone)
+						local closed = yard:GetAttribute('GateClosedAt')
+						local duringGate = i == 1 and type(closed) == 'number' and now >= closed + .3
+						-- (and he never slips away from the gate before it has shut)
+						if i == 1 and type(closed) ~= 'number' then onward = false end
+						if duringGate or (onward and not talking(now) and not seen(chest(marty), marty) and not seen(stand.Position + Vector3.new(0, 3, 0), marty)) then
 							moveTo(marty, stand, nextSpot.sets)
 							yardState[yard] = i + 1
 						end

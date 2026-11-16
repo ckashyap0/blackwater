@@ -55,7 +55,7 @@ function Floor:_Publish()
  local card=Ref(m,'Keycard')
  if self._stage=='Keycard' then
   local carried=card and card:GetAttribute('EHItemState')=='Carried'
-  text=carried and Config.Text.KeycardCarried or Config.Text.Keycard
+  text=carried and Config.Text.KeycardCarried or string.format(Config.Text.KeycardIn or 'Find the keycard (check the %s)',m:GetAttribute('KeycardRoom') or 'Break Room') -- (Nov 13) the room it turned up in this round
   targets={carried and 'CardReader' or 'Keycard'}
  elseif self._stage=='Jobs' then
   text=string.format(Config.Text.Jobs,self:_DoneCount(),#Config.Jobs)
@@ -138,6 +138,7 @@ function Floor:_Breaker(i,player)
  -- wrong order: the whole bank trips back
  self._flipped={};self._breakerProgress=0
  for k=1,5 do m:SetAttribute('Breaker'..k..'At',nil) end
+ m:SetAttribute('BreakerTripIndex',i) -- (Nov 13, Ryan) the spark flies off the exact wrong switch pressed (set before TripAt)
  m:SetAttribute('BreakerTripAt',self:_Now())
  self:_Toast(player,'Wrong order! The breakers tripped. Check the screen and start again.')
  self:_Publish()
@@ -226,7 +227,10 @@ function Floor:Prepare(context)
  -- the keycard turns up in one of its spots
  local card=Refs.Get(m,'Keycard')
  local spots={};for i=1,8 do local s=Ref(m,'KeycardSpot'..i);if s then table.insert(spots,s) end end
- if #spots>0 and context.RunId~='HorrorFixture' then card.CFrame=spots[rng:NextInteger(1,#spots)].CFrame end
+ -- (Nov 13) three spots, each lying flat on a desk or table in a different room (KeycardSpot Room attribute)
+ local spot=spots[1]
+ if #spots>0 and context.RunId~='HorrorFixture' then spot=spots[rng:NextInteger(1,#spots)];card.CFrame=spot.CFrame end
+ m:SetAttribute('KeycardRoom',spot and spot:GetAttribute('Room') or 'Break Room')
  context.RegisterItem(Config.KeycardItemId,Config.KeycardKind,card)
  context.RegisterSocket(Config.KeycardSocketId,Config.KeycardKind,Refs.Get(m,'CardReader'))
  card:SetAttribute('EHInteractionLabel','TAKE KEYCARD')

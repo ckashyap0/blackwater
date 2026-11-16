@@ -218,6 +218,40 @@ function Controller:_LiftFade(dt)
   if not cc or not cc.Parent then cc=Instance.new('ColorCorrectionEffect');cc.Name='LiftRideGrade';cc.Parent=game:GetService('Lighting');self._scope:Add(cc);self._dipGrade=cc end
   cc.Enabled=true;cc.Brightness=-.07*k;cc.Contrast=-.04*k;cc.Saturation=-.22*k;cc.TintColor=Color3.new(1,1,1):Lerp(Color3.fromRGB(226,232,240),k)
  elseif cc then cc.Enabled=false end
+ pcall(self._FloorLightFade,self,env,cabin,door,travelling,boarding,dt)
+end
+-- (Nov 13, Ryan) floor to floor the light FADES, it never switches: the floor you are leaving dims
+-- its lamps to black while the doors close (so its removal a moment after they shut is invisible),
+-- and a floor that loads while you ride starts dark and fades up as the doors part. Done on the
+-- light's Color (the flicker code only ever writes Brightness, so the two never fight).
+local LIGHT_OUT,LIGHT_IN=1.7,2.4
+function Controller:_FloorLightFade(env,cabin,door,travelling,boarding,dt)
+ self._lf=self._lf or setmetatable({},{__mode='k'})
+ for _,m in env:GetChildren()do
+  if m:IsA('Model') and (m:GetAttribute('EncounterId') or m.Name=='DepartingFloor') then
+   local st=self._lf[m]
+   if not st then
+    -- a floor that turns up mid-ride starts fully dark and fades in on arrival
+    st={d=(travelling and not boarding) and 1 or 0,lights=nil};self._lf[m]=st
+   end
+   local want=0
+   if m.Name=='DepartingFloor' then want=1
+   elseif door=='Closing' and not boarding and cabin and cabin:GetAttribute('TravelStartedAt')==nil and m:GetAttribute('EncounterId') and self._player:GetAttribute('EHContext')~='Intro' then want=1
+   elseif travelling then want=st.d>0 and 1 or 0 end
+   local d=st.d
+   if d<want then d=math.min(want,d+dt/LIGHT_OUT) elseif d>want then d=math.max(want,d-dt/LIGHT_IN) end
+   if d~=st.d or (d>0 and not st.lights) then
+    st.d=d
+    if not st.lights then
+     st.lights={}
+     for _,l in m:GetDescendants()do if l:IsA('Light') then st.lights[l]=l.Color end end
+    end
+    local u=d*d*(3-2*d)
+    for l,c in st.lights do if l.Parent then l.Color=c:Lerp(Color3.new(0,0,0),u) end end
+    if d==0 then st.lights=nil end
+   end
+  end
+ end
 end
 ------------------------------------------------------------------ surface dusk
 -- While the crew board at the surface (cabin attribute Boarding), this client swaps the pumping
@@ -233,7 +267,7 @@ end
 -- hangs in the air so every light carries a halo and a visible shaft.
 -- (Oct 21: darker, so the street lamps and car lights carry the scene)
 local DUSK={Ambient=Color3.fromRGB(9,10,12),OutdoorAmbient=Color3.fromRGB(21,24,28),Brightness=.3,ClockTime=21.3,FogStart=0,FogEnd=100000,
- FogColor=Color3.fromRGB(22,26,30),ExposureCompensation=-.3,EnvironmentDiffuseScale=.22,EnvironmentSpecularScale=.45,ShadowSoftness=.12} -- (specular .95 made metal edges flash white as the camera turned)
+ FogColor=Color3.fromRGB(22,26,30),ExposureCompensation=-.3,EnvironmentDiffuseScale=.22,EnvironmentSpecularScale=.45,ShadowSoftness=.5} -- (specular .95 made metal edges flash white as the camera turned)
 local SURFACE_GRADE={Brightness=0,Contrast=.2,Saturation=-.24,TintColor=Color3.fromRGB(206,222,230)}
 local HAZE={Density=.44,Offset=.22,Color=Color3.fromRGB(38,44,48),Decay=Color3.fromRGB(15,18,21),Glare=.25,Haze=2.6}
 -- {sound, volume, speed, treble cut dB}: every one of these is surface-only (see _SurfaceSky)
@@ -271,6 +305,8 @@ function Controller:_SurfaceSky(on)
  end
 end
 function Controller:_Daylight()
+ -- (Nov 15) Marty on the lift ceiling, on the ride from Level 5 down to Level 4 (Shared.Utilities.MartyCeiling)
+ pcall(require(Shared.Utilities.MartyCeiling).Step)
  local runtime=workspace:FindFirstChild('Runtime');local env=runtime and runtime:FindFirstChild('DescentEnvironment');local cabin=env and env:FindFirstChild('Elevator')
  local on=cabin and cabin:GetAttribute('Boarding')==true or false
  local descendAt=cabin and cabin:GetAttribute('DescendAt')
@@ -315,7 +351,7 @@ function Controller:_Daylight()
    for key,v in self._day do L[key]=v end
    for c,v in self._fx do if c.Parent then c.Brightness,c.Contrast,c.Saturation,c.TintColor=v[1],v[2],v[3],v[4] end end
    self:_SurfaceSky(false)
-   self._day=nil;self._fx=nil;self._fade=nil;self:_Black(0)
+   self._day=nil;self._fx=nil;self._fade=nil;self._scared=nil;self:_Black(0)
   end
  end
  setVolume(self:_Sound('outdoors'),SOUNDS.outdoors[2]*outdoors)

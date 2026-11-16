@@ -492,12 +492,17 @@ function Controller:_Travel(cabin,dt)
  if self._lurchFor~=started then
   self._lurchFor=started
   task.delay(math.max(0,.28-e),function()
-   local s=Instance.new('Sound');s.SoundId='rbxassetid://9114533169';s.Volume=.42;s.PlaybackSpeed=.78;s.Parent=game:GetService('SoundService');s:Play()
+   local s=Instance.new('Sound');s.SoundId='rbxassetid://9114533169';s.Volume=.2;s.PlaybackSpeed=.7;s.Parent=game:GetService('SoundService');s:Play()
    game:GetService('Debris'):AddItem(s,4)
   end)
  end
- if camera and not reduced and e>.28 and e<.75 then
-  local w=(e-.28)/.47;camera.CFrame*=CFrame.new(0,-math.sin(w*math.pi)*(1-w)*.22,0)
+ -- (Nov 13, Ryan: 'stopping to moving isn't smooth') no jolt any more: the cabin settles a few
+ -- hundredths of a stud as the brakes let go and again as it comes to rest, both on smooth curves
+ -- (zero speed at each end), so stop -> move -> stop reads as one seamless motion
+ if camera and not reduced then
+  local function bump(x)if x<=0 or x>=1 then return 0 end;return math.sin(x*math.pi)^2 end
+  local dip=bump((e-.15)/1.1)*.05+bump((e-(dur-1.1))/1.1)*.035
+  if dip>0 then camera.CFrame*=CFrame.new(0,-dip,0) end
  end
  if camera and not reduced and e<dur then
   local k=math.sin(u*math.pi)*.006;local t=os.clock()
@@ -584,17 +589,16 @@ function Controller:_Render(dt)
   local deadline=cabin:GetAttribute('SkipDeadline')
   local label
   if type(deadline)=='number' then
-   label='SKIPPING IN '..math.max(1,math.ceil(deadline-workspace:GetServerTimeNow()))
-  elseif self._voted then label='VOTED'
-  else label=self._skipPrompt or 'SKIP' end
+   label='Skipping in '..math.max(1,math.ceil(deadline-workspace:GetServerTimeNow()))
+  elseif self._voted then label='Voted to skip'
+  else label=self._skipPrompt or 'Hold to skip' end
   self._skipKey.Text=label
   if skipAlpha>=1 then self._skipKey.TextTransparency=(self._voted and type(deadline)~='number') and .35 or 0 end
   -- under the cursor / finger the text warms up and steps a pixel left (eased, never a jump)
   local hk=(self._skipHover and not self._voted) and 1 or 0
   self._skipHoverK=(self._skipHoverK or 0)+(hk-(self._skipHoverK or 0))*math.min(1,dt*14)
-  self._skipKey.TextColor3=Color3.fromRGB(232,150,62):Lerp(Color3.fromRGB(255,200,120),self._skipHoverK)
-  self._skipKey.Position=UDim2.fromOffset(-math.floor(3*self._skipHoverK+.5),0)
-  self._skipCount.Text=string.format('%d/%d VOTED',math.min(votes,crew),crew)
+  self._skipKey.TextColor3=Color3.fromRGB(200,200,200):Lerp(Color3.fromRGB(255,255,255),self._skipHoverK)
+  self._skipCount.Text=string.format('%d / %d voted',math.min(votes,crew),crew)
  end
  self:_Lids(cover)
  self._screen.Enabled=cover>0
@@ -660,7 +664,12 @@ function Controller:Start()
  local function prompts()
   local input=uis.PreferredInput
   -- (Nov 3: orange typewriter text, no box - the key in brackets like the speaker tags of the check-in talk)
-  self._skipPrompt=input==Enum.PreferredInput.Touch and '[TAP] SKIP' or (input==Enum.PreferredInput.Gamepad and '[B] SKIP' or '[SPACE] SKIP')
+  -- (Nov 13) a key chip first, then the words, like the controls legend
+  -- (Nov 13) the SPACE key chip only on a computer; phones, tablets and controllers just read "Skip"
+  local pc=input==Enum.PreferredInput.KeyboardAndMouse
+  self._skipPrompt=pc and 'Hold to skip' or 'Skip'
+  local chip=self._skip and self._skip:FindFirstChild('Key')
+  if chip then chip.Text='SPACE';chip.Visible=pc end
   self._hint.Text=input==Enum.PreferredInput.Touch and 'TAP TO CONTINUE' or (input==Enum.PreferredInput.Gamepad and 'A  CONTINUE' or 'CLICK OR ENTER TO CONTINUE')
  end
  prompts();self._scope:Add(uis:GetPropertyChangedSignal('PreferredInput'):Connect(prompts))

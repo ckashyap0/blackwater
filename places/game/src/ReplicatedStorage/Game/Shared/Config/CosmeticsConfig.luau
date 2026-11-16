@@ -6,7 +6,7 @@
 -- (FLASHLIGHT SKINS / BEAM COLORS tabs). Everything owned is equipped from the LOCKER, one tab per slot.
 -- Saved in their own DataStore (Store) so they follow the player between places and rejoins.
 local Freeze=require(script.Parent.Parent.Utilities.TableUtil).DeepFreeze
-return Freeze({
+local T={
 	Store="EHCosmeticsV1",
 	Slots={"Title","Flashlight","Beam"},
 	-- LOCKER tabs, left to right
@@ -31,6 +31,16 @@ return Freeze({
 		{Id="Unbroken",Name="Unbroken",Label="UNBROKEN",Color="#E2B651",Box=true,Rarity="LEGENDARY",Value=1500,Hint="Only found in MYSTERY BOXES"},
 		{Id="Abyssborn",Name="Abyssborn",Label="ABYSSBORN",Color="#FF4F8B",Box=true,Rarity="MYTHIC",Value=3000,Hint="Only found in MYSTERY BOXES"},
 		{Id="Blackwater",Name="Blackwater",Label="BLACKWATER",Color="#FF7AE0",Box=true,Rarity="ULTRA RARE",Value=6000,Hint="Only in the ABYSSAL CASE"},
+		-- (Nov 13) more box titles
+		{Id="GraveyardShift",Name="Graveyard Shift",Label="GRAVEYARD SHIFT",Color="#9AA3AE",Box=true,Rarity="COMMON",Value=150,Hint="Only found in MYSTERY BOXES"},
+		{Id="PipeRunner",Name="Pipe Runner",Label="PIPE RUNNER",Color="#5AA0FF",Box=true,Rarity="RARE",Value=400,Hint="Only found in MYSTERY BOXES"},
+		{Id="LastLight",Name="Last Light",Label="LAST LIGHT",Color="#E2B651",Box=true,Rarity="LEGENDARY",Value=1500,Hint="Only found in MYSTERY BOXES"},
+		-- CASE EXCLUSIVES (Box = that case's Id: only that case can give them)
+		{Id="Overtime",Name="Overtime",Label="OVERTIME",Color="#F0C020",Box="Hazard",Rarity="COMMON",Value=150,Hint="Only in the HAZARD KIT"},
+		{Id="ColdFront",Name="Cold Front",Label="COLD FRONT",Color="#B4E6FF",Box="Freeze",Rarity="EPIC",Value=800,Hint="Only in the DEEP FREEZE CASE"},
+		{Id="Firestarter",Name="Firestarter",Label="FIRESTARTER",Color="#FF6A1A",Box="Flame",Rarity="RARE",Value=400,Hint="Only in the FLAME CASE"},
+		-- GROUP: for members of the Blackwater Productions group (Groups below)
+		{Id="Crew",Name="Blackwater Crew",Label="BLACKWATER CREW",Color="#46D26E",Group="Crew",Hint="Join the Blackwater Productions group"},
 	},
 	-- Model = name of the held model in ReplicatedStorage.Game.Assets (Game place) and of its shop
 	-- preview in ReplicatedStorage.Game.ShopArt.Skins (Lobby). Price = coins in the shop.
@@ -73,6 +83,17 @@ return Freeze({
 		{Id="Glitch",Name="Glitch",Label="GLITCH",Color="#00F0FF",Model="SkinGlitch",Box=true,Rarity="LEGENDARY",Value=2200,Hint="Only found in MYSTERY BOXES"},
 		{Id="Hex",Name="Hex Totem",Label="HEX TOTEM",Color="#FF3B2F",Model="SkinHex",Box=true,Rarity="MYTHIC",Value=4200,Hint="Only found in MYSTERY BOXES"},
 		{Id="Supernova",Name="Supernova",Label="SUPERNOVA",Color="#FFC24A",Model="SkinSupernova",Box="Jackpot",Rarity="ULTRA RARE",Value=20000,Hint="The ABYSSAL CASE's 1% jackpot - nowhere else"},
+		-- (Nov 13) CASE EXCLUSIVES: Box = the one case that gives them (Config.MysteryBoxConfig)
+		{Id="Ember",Name="Ember",Label="EMBER",Color="#E0401A",Model="SkinEmber",Box="Flame",Rarity="RARE",Value=600,Hint="Only in the FLAME CASE"},
+		{Id="Firebrand",Name="Firebrand",Label="FIREBRAND",Color="#FF8A1A",Model="SkinFirebrand",Box="Flame",Rarity="EPIC",Value=1100,Hint="Only in the FLAME CASE"},
+		{Id="BlueFlame",Name="Blue Flame",Label="BLUE FLAME",Color="#3C9CFF",Model="SkinBlueFlame",Box="Flame",Rarity="LEGENDARY",Value=2200,Hint="Only in the FLAME CASE"},
+		{Id="Phoenix",Name="Phoenix",Label="PHOENIX",Color="#FFB43C",Model="SkinPhoenix",Box="Flame",Rarity="MYTHIC",Value=4200,Hint="Only in the FLAME CASE"},
+		{Id="Caution",Name="Caution",Label="CAUTION",Color="#F0C020",Model="SkinCaution",Box="Hazard",Rarity="COMMON",Value=300,Hint="Only in the HAZARD KIT"},
+		{Id="Flare",Name="Road Flare",Label="ROAD FLARE",Color="#FF3B2F",Model="SkinFlare",Box="Hazard",Rarity="RARE",Value=600,Hint="Only in the HAZARD KIT"},
+		{Id="Icebreaker",Name="Icebreaker",Label="ICEBREAKER",Color="#8FD8FF",Model="SkinIcebreaker",Box="Freeze",Rarity="RARE",Value=600,Hint="Only in the DEEP FREEZE CASE"},
+		{Id="GlacierCore",Name="Glacier Core",Label="GLACIER CORE",Color="#CFF4FF",Model="SkinGlacierCore",Box="Freeze",Rarity="LEGENDARY",Value=2200,Hint="Only in the DEEP FREEZE CASE"},
+		-- GROUP: for members of the Blackwater Productions group (Groups below)
+		{Id="Crew",Name="Crew Light",Label="CREW LIGHT",Color="#46D26E",Model="SkinCrew",Group="Crew",Hint="Join the Blackwater Productions group"},
 	},
 	-- Beam = light colour, Bounce = the soft light it throws back on your hands. Price = coins in the shop.
 	Beam={
@@ -112,6 +133,11 @@ return Freeze({
 		{Id="Hellfire",Name="Hellfire",Label="HELLFIRE",Color="#FF460A",Beam={255,70,10},Bounce={170,50,10},Box=true,Rarity="LEGENDARY",Value=1600,Hint="Only found in MYSTERY BOXES"},
 		{Id="AuroraShift",Name="Aurora Shift",Label="AURORA SHIFT",Color="#00FFC8",Beam={0,255,200},Bounce={0,171,134},Pulse={170,90,255},Box=true,Rarity="MYTHIC",Value=3000,Hint="Only found in MYSTERY BOXES"},
 		{Id="EventHorizon",Name="Event Horizon",Label="EVENT HORIZON",Color="#5A1EBE",Beam={90,30,190},Bounce={60,20,127},Pulse={225,240,255},Box=true,Rarity="ULTRA RARE",Value=6000,Hint="Only in the ABYSSAL CASE"},
+		-- (Nov 13) CASE EXCLUSIVES. Flicker = the light dances between Beam and Flicker like a real flame (animated).
+		{Id="Wildfire",Name="Wildfire",Label="WILDFIRE",Color="#FF7A1A",Beam={255,122,26},Bounce={170,80,20},Flicker={255,210,90},Box="Flame",Rarity="EPIC",Value=900,Hint="Only in the FLAME CASE - an animated flame light"},
+		{Id="BlueBlaze",Name="Blue Blaze",Label="BLUE BLAZE",Color="#3CA0FF",Beam={60,160,255},Bounce={40,100,170},Flicker={170,235,255},Box="Flame",Rarity="LEGENDARY",Value=1600,Hint="Only in the FLAME CASE - an animated flame light"},
+		{Id="Beacon",Name="Hazard Beacon",Label="HAZARD BEACON",Color="#FFB000",Beam={255,176,0},Bounce={170,118,0},Pulse={255,90,0},Box="Hazard",Rarity="COMMON",Value=150,Hint="Only in the HAZARD KIT"},
+		{Id="Frostlight",Name="Frostlight",Label="FROSTLIGHT",Color="#AEE8FF",Beam={174,232,255},Bounce={116,155,170},Pulse={255,255,255},Box="Freeze",Rarity="RARE",Value=450,Hint="Only in the DEEP FREEZE CASE"},
 	},
 	-- secret-room pickups: model name -> what taking it unlocks
 	Collectibles={
@@ -119,6 +145,10 @@ return Freeze({
 		PhantomFlashlight={Name="Phantom Flashlight",Grants={{"Flashlight","Phantom"},{"Beam","Phantom"}}},
 	},
 	-- gamepasses that unlock items (checked every join, and granted right after an in-game purchase)
+	-- (Nov 13) Roblox groups that unlock items: checked every join (members get them for free)
+	Groups={
+		Crew={GroupId=281081000,Name="Blackwater Productions",Grants={{"Flashlight","Crew"},{"Title","Crew"}}},
+	},
 	GamePasses={
 		VIP={Id=2017910251,Name="VIP Flashlight",Grants={{"Flashlight","VIP"},{"Beam","VIP"},{"Title","VIP"}}},
 	},
@@ -126,4 +156,12 @@ return Freeze({
 	Renamed={["Flashlight:Rune"]="Flashlight:Phantom",["Flashlight:Rustbelt"]="Flashlight:Default"},
 	-- how close (studs) a player must be to take a collectible
 	ClaimDistance=9,
-})
+}
+-- (Nov 13) every case's own exclusives (Config.CaseCosmetics) join the lists; older box items move to one case
+do
+	local Case=require(script.Parent.CaseCosmetics)
+	local NAMES={Crate="RUSTY CRATE",Case="MIDNIGHT CASE",Vault="ABYSSAL CASE"}
+	for _,slot in {"Flashlight","Beam","Title"} do for _,e in Case[slot] do table.insert(T[slot],e) end end
+	for slot,m in Case.Move do for _,e in T[slot] do if m[e.Id] then e.Box=m[e.Id];e.Hint="Only in the "..NAMES[m[e.Id]] end end end
+end
+return Freeze(T)

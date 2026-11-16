@@ -161,6 +161,7 @@ function M.Start()
 	local first, last = timeline[1], timeline[#timeline]
 	local function smooth(x) x = math.clamp(x, 0, 1) return x * x * (3 - 2 * x) end
 	local sw, nextLook, lastIndex = nil, 0, nil
+	local Tick = require(script.Parent.DialogueTick); Tick.Preload()
 	RunService.RenderStepped:Connect(function()
 		if not (sw and sw:IsDescendantOf(workspace)) then
 			sw = nil
@@ -195,9 +196,11 @@ function M.Start()
 		end
 		if i ~= lastIndex then
 			lastIndex = i
-			box.Size = UDim2.new(box.Size.X.Scale, box.Size.X.Offset, 0, baseH); line.TextSize = baseTS; fitting = true
+			fitting = false
 			line.RichText = l.kind == 'typing'
 			if l.kind ~= 'typing' then line.Text = (string.gsub(l.text, '{name}', player.Name)) end
+			-- (Nov 13) sized exactly before it types (DialogueFit): never cut off on any screen
+			task.spawn(require(script.Parent.DialogueFit).Fit, box, line, line.Text, baseH, baseTS, 54) -- (54 = 22 px inset + 32 px speaker row)
 			speaker.Text = (string.gsub(M.Speakers[l.who] or '', '{name}', player.Name))
 			if l.who == 'him' then buildHale() end
 			face.Visible = l.who == 'you'; haleView.Visible = l.who == 'him'
@@ -205,6 +208,7 @@ function M.Start()
 		local n = utf8.len(line.ContentText) or #line.Text
 		fitStep()
 		line.MaxVisibleGraphemes = (k >= 1) and -1 or math.floor(n * k + .5)
+		if l.kind ~= 'typing' then Tick.Step(tostring(at) .. ':' .. i, (k >= 1) and n or math.floor(n * k + .5), line.ContentText) end -- (Nov 13) soft tick as it types
 		-- the box: in with the first line (rising a few pixels), out after the last
 		local b = smooth((t - first.shown) / .3) * smooth((last.finish - t) / .8) -- (R36) a slower, clearly visible fade out once the talk is done
 		box.GroupTransparency = 1 - b

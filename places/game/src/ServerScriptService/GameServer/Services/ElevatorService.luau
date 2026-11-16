@@ -416,6 +416,7 @@ end
 function Service:_Seal()
 	local ok=self:CanDepart();if not ok then self:_State("Opening","DOORS BLOCKED");return end
 	local t=os.clock()
+	local leaving=self._runs:GetSnapshot();leaving=leaving and leaving.currentFloorNumber -- (Nov 15) the floor the lift is leaving
 	self:_Doors(0);self._sealed=true;self:_State("Closed","GOING DOWN")
 	t=mark("state",t)
 	if not self:_Command("BeginDeparture").ok then self:_Failure("InternalError");return end
@@ -425,8 +426,11 @@ function Service:_Seal()
 	if not self:_Command("CleanupResult",{succeeded=true}).ok then self:_Failure("CleanupFailed");return end
 	t=mark("CleanupResult",t)
 	-- A fixed five-second descent with the motor running; doors open on arrival with no eye-open fade.
-	self._travel=5;self._attempts=0;self._retry=0
-	self._cabin:SetAttribute("TravelStartedAt",workspace:GetServerTimeNow());self._cabin:SetAttribute("TravelSeconds",5)
+	-- (Nov 15) the ride down from Level 5 is longer: Marty's ceiling scare plays during it (MartyCeiling)
+	local ride=(leaving==5) and 8 or 5
+	self._travel=ride;self._attempts=0;self._retry=0
+	self._cabin:SetAttribute("TravelFromFloor",leaving)
+	self._cabin:SetAttribute("TravelStartedAt",workspace:GetServerTimeNow());self._cabin:SetAttribute("TravelSeconds",ride)
 	local motor=self._cabin:FindFirstChild("DescentMotor",true);if motor then motor.PlaybackSpeed=1;motor:Play()end
 	self:_ApplyAdminTarget()
 	if not self:_Command("PrepareFloor").ok then self:_Failure("LoadFailed")end

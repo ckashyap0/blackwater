@@ -22,18 +22,21 @@ local V=Vector3.new
 --   EHFlashlightColor -> beam / hand-bounce colour
 -- Nothing equipped = the standard maintenance light with the warm white beam.
 local Cosmetics=require(Shared.Config.CosmeticsConfig)
-local SKINS,BEAM,BOUNCE,RAINBOW,PULSE={},{},{},{},{}
+local SKINS,BEAM,BOUNCE,RAINBOW,PULSE,FLICKER={},{},{},{},{},{}
 for _,e in Cosmetics.Flashlight do SKINS[e.Id]=e.Model end
 for _,e in Cosmetics.Beam do
  BEAM[e.Id]=Color3.fromRGB(e.Beam[1],e.Beam[2],e.Beam[3])
  BOUNCE[e.Id]=Color3.fromRGB(e.Bounce[1],e.Bounce[2],e.Bounce[3])
  if e.Rainbow then RAINBOW[e.Id]=true end
  if e.Pulse then PULSE[e.Id]=Color3.fromRGB(e.Pulse[1],e.Pulse[2],e.Pulse[3]) end
+ if e.Flicker then FLICKER[e.Id]=Color3.fromRGB(e.Flicker[1],e.Flicker[2],e.Flicker[3]) end
 end
 -- beam + hand-bounce colour; a Rainbow beam slowly cycles through every hue, a Pulse beam drifts to its
 -- second colour and back
 local function beamColors(id)
  if RAINBOW[id] then local c=Color3.fromHSV((os.clock()*.12)%1,.72,1);return c,c:Lerp(Color3.new(),.3) end
+ -- (Nov 13) a flame light: dances between its two colours on layered noise, like a real fire
+ if FLICKER[id] then local t=os.clock();local k=math.clamp(.5+.38*math.noise(t*3.1,.2)+.22*math.noise(t*9.7,4.1),0,1);local c=BEAM[id]:Lerp(FLICKER[id],k);return c,c:Lerp(Color3.new(),.3) end
  if PULSE[id] then local k=.5-.5*math.cos(os.clock()*.9);local c=BEAM[id]:Lerp(PULSE[id],k);return c,c:Lerp(Color3.new(),.3) end
  return BEAM[id],BOUNCE[id]
 end
@@ -342,7 +345,7 @@ function Controller:_View(dt,camera,b)
   local desktop=game:GetService('UserInputService').PreferredInput==Enum.PreferredInput.KeyboardAndMouse
   local world=camera.CFrame*float*HeldMotion.CarryPose(self._carryTool.Size,aspect,camera.FieldOfView,amount,desktop and HeldMotion.DesktopCarrySpread or nil)
   do local drop=self._carryDrop;if drop then world=world-camera.CFrame.UpVector*drop end end -- (an item can sit a little lower in the hand: HeldViewDrop)
-  if self._carryFlat then world=(world+camera.CFrame.UpVector*.14)*CFrame.Angles(math.rad(-6),math.rad(-14),math.rad(7)) end -- (R36) held upright, angled in a little, like a real card (lifted so the bottom edge stays in view)
+  if self._carryFlat then world=(world+camera.CFrame.UpVector*.14+camera.CFrame.RightVector*.1)*CFrame.Angles(math.rad(-3),math.rad(-2),math.rad(1)) end -- (Nov 13) flat-on to you and a little nearer the middle (was -6,-14,7 with no side shift) -- (R36) held upright, angled in a little, like a real card (lifted so the bottom edge stays in view)
    self._carryTool.CFrame=world
   if self._carryView then
    self._carryView:PivotTo(HeldMotion.Compress(camera.CFrame.Position,world))

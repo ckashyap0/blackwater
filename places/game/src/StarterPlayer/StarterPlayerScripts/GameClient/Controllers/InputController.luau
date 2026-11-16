@@ -19,7 +19,7 @@ local ABILITIES={Flashlight=true}
 local LEGEND={
  {id='Move',kb='W A S D  Move',pad='LEFT STICK  Move'},
  {id='Sprint',kb='SHIFT  Sprint',pad='L3  Sprint'},
- {id='Crouch',kb='C / CTRL  Crouch',pad='R3 / B  Crouch'},
+ {id='Crouch',kb='CTRL  Crouch',pad='R3  Crouch'},
  {id='Interact',kb='E  Interact',pad='X  Interact'},
  {id='Flashlight',kb='F  Flashlight',pad='Y  Flashlight'},
  {id='Drop',kb='X  Drop item',pad='D-PAD DOWN  Drop item'},
@@ -264,7 +264,15 @@ function Controller:_UpdateButtons()
  self._legend.Visible=legend
  local pad=UIS.PreferredInput==Enum.PreferredInput.Gamepad
  for _,row in LEGEND do
-  local l=self._legendRows[row.id];if not l then continue end;l.Text=(pad and row.pad) or row.kb
+  local l=self._legendRows[row.id];if not l then continue end
+  -- (Nov 13) a row is a frame authored in StarterGui: Key (the chip) + Action (the word)
+  local txt=(pad and row.pad) or row.kb or ''
+  if l:IsA('TextLabel') then l.Text=txt
+  else
+   local k,a=string.match(txt,'^(.-)%s%s+(.*)$')
+   local kl,al=l:FindFirstChild('Key'),l:FindFirstChild('Action')
+   if kl then kl.Text=k or txt end;if al then al.Text=string.upper(a or '') end
+  end
   local show=legend and not (ABILITIES[row.id] and locked) and not (row.id=='Drop' and self._player and self._player:GetAttribute('EHCarryingMop')) and not (row.id=='Cursor' and pad)
   self:_SetShown(l,show)
  end

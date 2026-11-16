@@ -989,6 +989,7 @@ end
 -- top always stays clear above the drain fittings - nothing is ever coplanar, nothing z-fights.
 local DRAIN_FILM=.035 -- below this depth the water is a puddle gathering at the plughole
 local MIN_T=.019      -- the drawn surface never sinks lower than this above the basin floor
+local SINK_FILLS=false -- (Nov 13) false: the water runs away instead of filling the basin
 local SINK_FOLLOW=5 -- how quickly the drawn surface catches up with the true level (per second)
 local function sinkLook(S)
  local w=S.water
@@ -1043,7 +1044,9 @@ function Controller:_Sink(m,serverNow,dt)
   self._sinks[m]=S
  end
  local on=m:GetAttribute('WaterOn')==true
- local level=SinkCurve.FromModel(m,serverNow)
+ -- (Nov 13) the basin never fills: the tap just pours straight down into it and runs away, with a
+ -- light spray of droplets where it lands (like the leaking pipes). The server's level curve is ignored here.
+ local level=SINK_FILLS and SinkCurve.FromModel(m,serverNow) or 0
  -- the drawn level eases after the true one, so a late attribute or a clock correction never pops
  S.level+=(level-S.level)*(1-math.exp(-dt*SINK_FOLLOW))
  level=S.level
@@ -1177,9 +1180,20 @@ function Controller:_Sink(m,serverNow,dt)
  if S.drops then
   local h=math.max(.05,(S.start.WorldPosition.Y-(S.top or S.bottom)))
   S.drops.Lifetime=NumberRange.new(math.sqrt(2*h/(workspace.Gravity*.28))*.95)
-  S.drops.Rate=0
+  S.drops.Rate=(not SINK_FILLS and flowing) and 14*(S.flow or 0) or 0
  end
- if S.splash then S.splash.Enabled=landed;S.splash.Rate=level>.15 and 30 or 55 end
+ if S.splash then S.splash.Enabled=landed;S.splash.Rate=SINK_FILLS and (level>.15 and 30 or 55) or 40 end
+ -- (Nov 13) a fine spray kicking up where the stream hits the basin
+ if not SINK_FILLS and S.bottomAtt and not S.spray then
+  local e=Instance.new('ParticleEmitter');e.Name='SinkSpray';e.Texture='rbxasset://textures/particles/sparkles_main.dds'
+  e.Color=ColorSequence.new(Color3.fromRGB(150,160,160));e.LightEmission=0;e.LightInfluence=1
+  e.Size=NumberSequence.new({NumberSequenceKeypoint.new(0,.03),NumberSequenceKeypoint.new(1,.012)})
+  e.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,.25),NumberSequenceKeypoint.new(1,1)})
+  e.EmissionDirection=Enum.NormalId.Top;e.SpreadAngle=Vector2.new(70,70);e.Speed=NumberRange.new(.8,1.8)
+  e.Acceleration=Vector3.new(0,-workspace.Gravity*.3,0);e.Lifetime=NumberRange.new(.25,.45);e.Drag=1.5;e.Rate=0
+  e.Parent=S.bottomAtt;S.spray=e;self._scope:Add(e)
+ end
+ if S.spray then S.spray.Rate=landed and 45*(S.flow or 0) or 0 end
  if S.murk then S.murk.Enabled=landed and level>.05 end
  if S.foam then
   -- foam builds where the stream lands once there is water to float on, and stops with the tap

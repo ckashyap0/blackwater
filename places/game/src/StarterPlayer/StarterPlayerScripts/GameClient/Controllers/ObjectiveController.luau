@@ -58,10 +58,34 @@ end
 --  * the stand-in never streams in or out, changes or flickers, so the outline is rock steady.
 -- Each object keeps its outline for as long as it is a target, fading in and out softly.
 local RunService=game:GetService('RunService')
-local OUTLINE_T=.08       -- (R36) outline transparency when fully shown: a firm, clear line, through walls too
-local INSET=.012          -- studs: how far each stand-in face sits inside the real one (a fixed hair, not a
+local OUTLINE_IN,OUTLINE_OUT=70,90 -- (Nov 13) studs: the outline comes on inside IN and stays until you are past OUT
+local STANDIN_T=0 -- (Nov 13: a Highlight skips see-through parts, so the stand-in stays opaque; the z-fight at range is
+                  -- handled by the larger INSET and the distance fade below)
+local FAR_FULL,FAR_NONE,FAR_DEPTH=16,24,0 -- (Nov 13, later) the line only comes in once you are close enough to use the thing (full inside 16 studs, gone past 24), and never through walls -- (Nov 13, Ryan) full line inside 26 studs, fades out by 58; no through-wall line past 40
+local OUTLINE_T=0 -- (Nov 15, Ryan: crisp, solid line) was .08
+local OUTLINE_ALWAYS=true -- (Nov 15, Ryan) no fade-in, no distance or close-up fade, visible through walls from anywhere
+--      -- (R36) outline transparency when fully shown: a firm, clear line, through walls too
+local INSET=.03           -- (Nov 13: was .012 - at range the stand-in z-fought the real face and the line crawled) studs: how far each stand-in face sits inside the real one (a fixed hair, not a
                           -- share of the size - scaling every piece about its own centre opened little gaps
                           -- between touching pieces, which showed as notches and steps in the line)
+-- (Nov 13, later) OUTLINE STYLE. 'Shell' (default): no Highlight at all. Each stand-in becomes a thin glowing
+-- shell (ForceField material) a hair larger than the real piece, so the glow follows the object's real shape,
+-- is drawn as geometry (smooth at any distance, no jagged pixel line, no crawl) and never hits Roblox's limit on
+-- how many Highlights can be on screen (going over it is what made outlines blink). It fades in from SHELL_FAR
+-- studs and is full strength inside SHELL_NEAR. 'Highlight' brings back the old pixel line.
+local OUTLINE_STYLE='Highlight' -- (Nov 13, later: Ryan prefers the white line back)
+local SHELL_NEAR,SHELL_FAR=260,320 -- studs
+local SHELL_T=.25 -- shell transparency when fully shown (0 = brightest)
+local SHELL_PAD=.035 -- studs the shell sits outside each real face
+local SHELL_COLOR=Color3.fromRGB(236,234,222)
+local function shellify(list,grow)
+ for _,pr in list do
+  local c=pr.copy
+  c.Material=Enum.Material.ForceField;c.Color=SHELL_COLOR;c.Transparency=1;c.Reflectance=0
+  if c:IsA('MeshPart') then pcall(function()c.TextureID=''end) end
+  c.Size=c.Size+Vector3.one*(grow or (INSET+SHELL_PAD*2))
+ end
+end
 local MAX_OBJECT=16  -- studs: a model bigger than this (a room, the lift) is too big to outline whole
 local holder
 local function folder()
@@ -146,7 +170,7 @@ local function standIn(p,obj)
  if p.Anchored then h,lift=floorClip(p,obj) end
  local function inset(v)return Vector3.new(math.max(.004,v.X-INSET),math.max(.004,v.Y-INSET),math.max(.004,v.Z-INSET))end
  if h then c.Size=inset(Vector3.new(p.Size.X,h,p.Size.Z));off=CFrame.new(0,lift,0) else c.Size=inset(p.Size) end
- c.CFrame=p.CFrame*off;c.Transparency=0;c.LocalTransparencyModifier=0
+ c.CFrame=p.CFrame*off;c.Transparency=STANDIN_T;c.LocalTransparencyModifier=0
  return c,off
 end
 -- (Nov 3) a hand wheel is outlined by its RIM only - a ring of thin segments laid along the rim, so the hub and
@@ -157,13 +181,20 @@ end
 local RING={WheelMesh={r=.459,w=.063,z=-.1,n=40}}
 local function ringParts(obj,model)
  local spec=RING[obj.Name];if not spec then return nil end
+ do -- (Nov 15, Ryan: 'just a circle outline around the outer part') one thin see-through disc at the rim's outer edge
+  local R=math.min(obj.Size.X,obj.Size.Y)*.5-.02
+  local off=CFrame.new(0,0,obj.Size.Z*spec.z)*CFrame.Angles(0,math.pi/2,0) -- (a cylinder's round faces point along its X: turned to face along the wheel's axis)
+  local c=Instance.new('Part');c.Name='RimDisc';c.Shape=Enum.PartType.Cylinder;c.Anchored=true;c.CanCollide=false;c.CanQuery=false;c.CanTouch=false;c.CastShadow=false
+  c.Size=Vector3.new(.03,R*2,R*2);c.Transparency=.99;c.Material=Enum.Material.SmoothPlastic;c.CFrame=obj.CFrame*off;c.Parent=model
+  return {{src=obj,copy=c,cf=obj.CFrame,off=off}}
+ end
  local R=math.min(obj.Size.X,obj.Size.Y)*spec.r;local seg=2*math.pi*R/spec.n*1.02
  local list={}
  for i=0,spec.n-1 do
   local a=(i+.5)/spec.n*2*math.pi
   local off=CFrame.new(0,0,obj.Size.Z*spec.z)*CFrame.Angles(0,0,a)*CFrame.new(R,0,0)*CFrame.Angles(0,0,math.pi/2) -- (a cylinder lies along its X: turned along the rim)
   local c=Instance.new('Part');c.Name='Rim';c.Shape=Enum.PartType.Cylinder;c.Anchored=true;c.CanCollide=false;c.CanQuery=false;c.CanTouch=false;c.CastShadow=false
-  local dia=obj.Size.X*spec.w;c.Size=Vector3.new(seg,dia,dia);c.Transparency=0;c.Material=Enum.Material.SmoothPlastic
+  local dia=obj.Size.X*spec.w;c.Size=Vector3.new(seg,dia,dia);c.Transparency=STANDIN_T;c.Material=Enum.Material.SmoothPlastic
   c.CFrame=obj.CFrame*off;c.Parent=model
   table.insert(list,{src=obj,copy=c,cf=obj.CFrame,off=off})
  end
@@ -182,9 +213,21 @@ function Controller:_Mark(obj)
   -- the rim: full strength while you can see the wheel, softer while a wall is in the way (the full-strength
   -- line through walls read as a smeared shape)
   local model=Instance.new('Model');model.Name='Outline_'..obj.Name
-  local pairs_=ringParts(obj,model);local h=outline(model,Enum.HighlightDepthMode.AlwaysOnTop);model.Parent=folder()
+  local pairs_=ringParts(obj,model)
+  local h=nil
+  if OUTLINE_STYLE=='Shell' then shellify(pairs_,.01) else h=outline(model,Enum.HighlightDepthMode.AlwaysOnTop) end
+  model.Parent=folder()
   self._marks[obj]={obj=obj,model=model,h=h,parts=pairs_,alpha=0,leaving=false,ring=true,seen=1}
   return
+ end
+ if obj:IsA('BasePart') and obj:GetAttribute('EHItemState')~=nil and OUTLINE_STYLE=='Shell' then
+  -- a pick-up: one shell around the item itself, following it if it moves
+  local model=Instance.new('Model');model.Name='PickupOutline_'..obj.Name
+  local pairs_={}
+  for _,p in bodyParts(obj) do local c,off=standIn(p,obj);if c then c.Parent=model;table.insert(pairs_,{src=p,copy=c,cf=p.CFrame,off=off}) end end
+  if #pairs_==0 then model:Destroy();return end
+  shellify(pairs_);model.Parent=folder()
+  self._marks[obj]={obj=obj,model=model,parts=pairs_,alpha=0,leaving=false,direct=true};return
  end
  if obj:IsA('BasePart') and obj:GetAttribute('EHItemState')~=nil then
   local model=Instance.new('Folder');model.Name='PickupOutline_'..obj.Name;model.Parent=folder()
@@ -198,9 +241,13 @@ function Controller:_Mark(obj)
   if c then c.Parent=model;table.insert(pairs_,{src=p,copy=c,cf=p.CFrame,off=off}) end
  end
  if #pairs_==0 then model:Destroy();return end
- local h=Instance.new('Highlight');h.Name='Outline'
- h.FillTransparency=1;h.OutlineColor=Color3.fromRGB(236,234,222);h.OutlineTransparency=1
- h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop;h.Adornee=model;h.Parent=model
+ local h=nil
+ if OUTLINE_STYLE=='Shell' then shellify(pairs_)
+ else
+  h=Instance.new('Highlight');h.Name='Outline'
+  h.FillTransparency=1;h.OutlineColor=Color3.fromRGB(236,234,222);h.OutlineTransparency=1
+  h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop;h.Adornee=model;h.Parent=model
+ end
  model.Parent=folder()
  self._marks[obj]={obj=obj,model=model,h=h,parts=pairs_,alpha=0,leaving=false}
 end
@@ -210,9 +257,13 @@ end
 -- every frame: fades, and the stand-in follows the object if it moves (a carried or dropped fuse)
 function Controller:_DrawOutlines(dt)
  for obj,mk in self._marks do
-  mk.alpha+=((mk.leaving and 0 or 1)-mk.alpha)*(1-math.exp(-math.clamp(dt,0,.1)*9))
+  if OUTLINE_ALWAYS then mk.alpha=mk.leaving and 0 or 1 else mk.alpha+=((mk.leaving and 0 or 1)-mk.alpha)*(1-math.exp(-math.clamp(dt,0,.1)*9)) end
   -- the object itself has gone (picked up - even just predicted on this screen): its outline goes
   -- with it at once instead of fading out where the object used to be
+  -- (Nov 13) a dropped item gets its outline only once it has landed and settled (it used to sit where the
+  -- card would end up while the card was still falling)
+  if mk.direct then local st=obj:GetAttribute('EHItemState');if st~=mk.lastState then mk.lastState=st;mk.stateAt=os.clock() end
+   if st=='Dropped' and os.clock()-(mk.stateAt or 0)<1.4 then mk.alpha=0 end end
   local gone=mk.direct and (obj.Transparency>=.99 or obj.LocalTransparencyModifier>=.99 or obj:GetAttribute('EHItemState')=='Carried' or obj:GetAttribute('EHItemState')=='Installed') or false
   for _,pr in mk.parts do local s=pr.src;if s and s.Parent and (s.Transparency>=.99 or s.LocalTransparencyModifier>=.99) then gone=true;break end end
   if gone or (mk.leaving and mk.alpha<.01) or not obj.Parent then
@@ -233,8 +284,48 @@ function Controller:_DrawOutlines(dt)
    -- (R36) only fades when you are right on it (full strength from 5 studs): the owner wants it clear
    if cam and ref then local u=math.clamp(((cam.CFrame.Position-ref.Position).Magnitude-2)/3,0,1);near=u*u*(3-2*u) end
    -- (R36) the wheel rim stays full strength through walls too (it used to dim to 45% behind a wall)
-   local t=1-(1-OUTLINE_T)*mk.alpha*near
-   if math.abs(mk.h.OutlineTransparency-t)>.002 then mk.h.OutlineTransparency=t end
+   -- (Nov 13) far away the line is only a few jagged pixels, so it is off until you are within OUTLINE_IN
+   -- studs and then stays on until you are past OUTLINE_OUT (two distances, so it never flickers at the edge);
+   -- it eases in and out, and the Highlight is switched off entirely while it is invisible
+   local dist=(cam and ref) and (cam.CFrame.Position-ref.Position).Magnitude or 0
+   -- (Nov 13, Ryan: 'the outlines glitch and look pixelated far away') a Highlight's line is a fixed
+   -- pixel width, so on a small far-off shape it turns into a jagged, crawling smear. It now thins out
+   -- smoothly with distance (full strength inside FAR_FULL, gone by FAR_NONE) instead of a hard switch
+   -- at 70 studs, and past FAR_DEPTH it stops drawing through walls (the through-wall line is what
+   -- shimmered most at range).
+   local nearD,farD=FAR_FULL,FAR_NONE
+   if not mk.h then nearD,farD=SHELL_NEAR,SHELL_FAR end
+   local far=math.clamp((dist-nearD)/(farD-nearD),0,1);local farK=1-far*far*(3-2*far)
+   if mk.rangeK==nil then mk.rangeK=farK end
+   mk.rangeK+=(farK-mk.rangeK)*(1-math.exp(-math.clamp(dt,0,.1)*6))
+   if mk.h then
+    -- never through walls: the stand-in sits a hair inside the real object, so the Highlight stays AlwaysOnTop,
+    -- and a ray from the camera decides whether the thing is actually in view (checked a few times a second,
+    -- eased so it never blinks)
+    if mk.h.DepthMode~=Enum.HighlightDepthMode.AlwaysOnTop then mk.h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop end
+    if os.clock()>=(mk.losAt or 0) and cam and ref then
+     mk.losAt=os.clock()+.12
+     local o=cam.CFrame.Position;local d=ref.Position-o
+     local rp=RaycastParams.new();rp.FilterType=Enum.RaycastFilterType.Exclude
+     local ex={mk.model,self._player.Character,cam};if obj:IsA('Model') then table.insert(ex,obj) elseif obj.Parent and obj.Parent:IsA('Model') and obj.Parent~=workspace then table.insert(ex,obj.Parent) else table.insert(ex,obj) end
+     for _,pr in mk.parts do if pr.src then table.insert(ex,pr.src) end end
+     rp.FilterDescendantsInstances=ex
+     local r=workspace:Raycast(o,d*.97,rp)
+     mk.inView=(r==nil) or (r.Instance.Transparency>=.95) or (not r.Instance.CanCollide and r.Instance.Size.Magnitude<3)
+    end
+    mk.viewK=(mk.viewK or 0)+(((mk.inView~=false) and 1 or 0)-(mk.viewK or 0))*(1-math.exp(-math.clamp(dt,0,.1)*10))
+    local strength=mk.alpha*near*mk.rangeK*mk.viewK
+    if OUTLINE_ALWAYS then strength=mk.alpha end
+    local t=1-(1-OUTLINE_T)*strength
+    if math.abs(mk.h.OutlineTransparency-t)>.002 then mk.h.OutlineTransparency=t end
+    local on=strength>.01
+    if mk.h.Enabled~=on then mk.h.Enabled=on end
+   else
+    -- the shell: no close-up fade (it is geometry, it stays clean up close)
+    local strength=mk.alpha*mk.rangeK
+    local t=strength>.01 and 1-(1-SHELL_T)*strength or 1
+    if math.abs((mk.shownT or -1)-t)>.002 then mk.shownT=t;for _,pr in mk.parts do if pr.copy.Parent then pr.copy.Transparency=t end end end
+   end
   end
  end
 end
@@ -257,7 +348,8 @@ function Controller:_Update()
 
 
 
- if not active then self:_HideOutlines();return end
+ -- (Nov 13) the same short grace as the bar: a brief gap never blinks the outlines off and on again
+ if not active then if not shown then self:_HideOutlines() end;return end
  local message=src and src.text or floor:GetAttribute('TaskText')or ''
  local names={}
  for name in string.gmatch(floor:GetAttribute('TaskTargets')or floor:GetAttribute('TaskTarget')or '','[^,]+')do table.insert(names,name)end
@@ -371,6 +463,16 @@ function Controller:_FadeStep()
  if self._chevron then local r=180*(1-e);if self._chevron.Rotation~=r then self._chevron.Rotation=r end end -- (points up when open, down when folded)
  local a=1
  if Reveal.Active() or self._revealing then a=Reveal.Alpha();self._revealing=Reveal.Active() end
+ -- (Nov 13) the task bar eases out for every cutscene and transition (camera shots, the lift ride, the
+ -- intro, a black fade) and back in after, instead of sitting over them
+ local ctx=self._input and self._input:GetContext()
+ local away=self._player:GetAttribute('EHCinematic')~=nil or (ctx~=nil and ctx~='ActiveFloor')
+ local pg=self._player:FindFirstChild('PlayerGui')
+ if not away and pg then for _,n in {'ArrivalCover','DescentFade','WakeLids','ArrivalText','IntroHud'} do local g=pg:FindFirstChild(n);if g and g.Enabled then away=true;break end end end
+ self._cutK=self._cutK or (away and 0 or 1)
+ self._cutK+=((away and 0 or 1)-self._cutK)*math.min(1,dt*(away and 9 or 4))
+ local ck=self._cutK*self._cutK*(3-2*self._cutK)
+ a*=ck
  local k=1
  if self._textIn then
   local u=math.clamp((os.clock()-self._textIn)/.45,0,1);k=u*u*(3-2*u)
@@ -380,6 +482,8 @@ function Controller:_FadeStep()
   local obj,prop,base=f[1],f[2],f[3]
   local w=a
   if prop=='TextTransparency' and (obj==self._label or obj==self._side) then w=a*k*e end
+  -- (Nov 13) folding it away (the arrow, on every device) takes the OBJECTIVE heading with it; only the arrow stays
+  if prop=='TextTransparency' and obj.Name=='Heading' and obj.Parent==self._label.Parent then w=a*e end
   local v=1-(1-base)*w
   if obj[prop]~=v then obj[prop]=v end
  end

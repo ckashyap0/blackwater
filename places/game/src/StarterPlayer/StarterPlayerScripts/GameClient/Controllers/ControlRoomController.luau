@@ -99,6 +99,8 @@ function Controller:_Index(floor)
     if ref=='ServerDoor' then f.doorLeaf=d end
    end
    if d:GetAttribute('SlidesWith')=='ServerDoor' then table.insert(f.door,d) end
+   -- (Nov 15) extra pieces of a breaker lever (its chrome stem) turn with it: MovesWith='Breaker<n>'
+   local mw=d:GetAttribute('MovesWith');if mw then f.leverExtras=f.leverExtras or {};f.leverExtras[mw]=f.leverExtras[mw] or {};table.insert(f.leverExtras[mw],{p=d,home=d.CFrame}) end
   end
  end
  if f.doorLeaf then table.insert(f.door,f.doorLeaf) end
@@ -254,9 +256,8 @@ function Controller:_OrderScreen(f,s,now,state)
    local cur=not state.done.Breakers and k==state.breakerProgress+1
    c.Num.Text=i and tostring(i) or '-'
    c.Num.TextTransparency=done and .55 or 0
-   c.Strip.BackgroundColor3=i and BREAKER_COLORS[i] or Color3.fromRGB(51,51,51)
-   c.Ring.Color=tripped and WRED or (done and WHITE or ((cur and blink) and WHITE or WRED))
-   c.Ring.Transparency=(done or cur or tripped) and 0 or .55
+   -- (Nov 13) plain numbers, no boxes: the next one to flip is red (blinking), the rest white, done ones dim
+   c.Num.TextColor3=(tripped or (cur and blink)) and WRED or WHITE
   end
  end
  local st=bg:FindFirstChild('Status')
@@ -352,7 +353,10 @@ function Controller:_Living(dt)
  if trip~=self._lastTrip then
   self._lastTrip=trip
   if trip then
-   local bank=f.breakers[3] and f.breakers[3].p
+   -- (Nov 13, Ryan) the sparks fly off the exact wrong switch that was pressed, not the middle one
+   local wrong=tonumber(floor:GetAttribute('BreakerTripIndex'))
+   local hit=(wrong and f.breakers[wrong]) or f.breakers[3]
+   local bank=hit and hit.p
    if bank then self:_Sound('trip',bank,.9,1.4);self:_Sound('bad',bank,.7,.8);self:_Sparks(bank) end
    f.tripFlash=now+1.2
   end
@@ -366,6 +370,7 @@ function Controller:_Living(dt)
   if b.angle~=goal then
    b.angle=b.angle<goal and math.min(goal,b.angle+rate*dt) or math.max(goal,b.angle-rate*dt)
    if b.p.Parent then b.p.CFrame=b.pivot*CFrame.Angles(math.rad(b.angle),0,0)*b.pivot:ToObjectSpace(b.home) end
+   for _,x in (f.leverExtras and f.leverExtras['Breaker'..i]) or {} do if x.p.Parent then x.p.CFrame=b.pivot*CFrame.Angles(math.rad(b.angle),0,0)*b.pivot:ToObjectSpace(x.home) end end
   end
   local lamp=f.lamps[i]
   if lamp then
@@ -597,7 +602,7 @@ function Controller:_OpenWindow(id)
  if build then local ok,err=pcall(build,self,w,w.body);if not ok then warn('[ElevatorHorror] job window: '..tostring(err)) end end
  -- gamepad: start with a control selected so the D-pad / stick can move between them
  if UIS.PreferredInput==Enum.PreferredInput.Gamepad then
-  local first={Upload=w.body.Upload.Run,Wires=w.body.Wires.L1,Dials=w.body.Dials.Dial1.Up,Radio=w.body.Radio.Right}
+  local first={Upload=w.body.Upload.Run,Wires=w.body.Wires.L1,Dials=w.body.Dials.Dial1.Up,Radio=w.body.Radio.HoldButton}
   task.defer(function()if self._window==w then game:GetService('GuiService').SelectedObject=first[id] or win.Close end end)
   w.scope:Add(function()local gs=game:GetService('GuiService');if gs.SelectedObject and gs.SelectedObject:IsDescendantOf(win) then gs.SelectedObject=nil end end)
  end
@@ -738,7 +743,7 @@ function Controller:_JobWires(w,body)
  local function select(i)
   if sel then ring(L[sel],INK,.7) end
   sel=i
-  if i then ring(L[i],GOLD,0,2);self:_Sound('beep',nil,.25,1.6) end
+  if i then ring(L[i],WHITE,0,3);self:_Sound('beep',nil,.25,1.6) end
  end
  local function endPoint(s,left)
   local p=s.Plug;local a=p.AbsolutePosition;local z=p.AbsoluteSize
@@ -791,7 +796,7 @@ end
 ------------------------------------------------ DIALS
 function Controller:_JobDials(w,body)
  local di=body.Dials;di.Visible=true
- w.hint.Text='Bring each pump needle into its green band, then lock the settings.'
+ w.hint.Text='Bring each pump needle into its marked band, then lock the settings.'
  local targets={};for n in string.gmatch((self._f and self._f.floor:GetAttribute('DialTargets')) or '50,50,50','%d+')do table.insert(targets,tonumber(n)) end
  local tol=Config.DialTolerance
  local vals={}
@@ -808,13 +813,13 @@ function Controller:_JobDials(w,body)
   w.scope:Add(RunService.RenderStepped:Connect(function(dt)
    needle.Position=needle.Position:Lerp(UDim2.fromScale(.5,1-vals[k]/100),1-math.exp(-math.min(dt,.1)*18))
    local good=math.abs(vals[k]-targets[k])<=tol-1
-   needle.BackgroundColor3=good and GREEN or INK
+   needle.BackgroundColor3=good and WHITE or WRED
    num.Text=string.format('%d PSI',math.floor(vals[k]*1.2))
-   num.TextColor3=good and GREEN or INK
+   num.TextColor3=good and WHITE or MUTED
   end))
  end
  w.scope:Add(RunService.RenderStepped:Connect(function()
-  local ok=inZone();lock.TextColor3=ok and GREEN or MUTED;lock.UIStroke.Color=ok and GREEN or INK
+  local ok=inZone();lock.TextColor3=ok and WHITE or MUTED;lock.BackgroundColor3=ok and Color3.fromRGB(88,18,16) or Color3.fromRGB(22,22,24)
  end))
  w.scope:Add(lock.Activated:Connect(function()
   if w.done then return end
@@ -823,25 +828,32 @@ function Controller:_JobDials(w,body)
 end
 ------------------------------------------------ RADIO
 function Controller:_JobRadio(w,body)
+ -- (Nov 10) hold to fix: the set has drifted off its channel; holding the button (or E / Space) walks it
+ -- back on its own. Letting go lets it slip away again. Nothing to adjust.
  local ra=body.Radio;ra.Visible=true
  local target=(self._f and self._f.floor:GetAttribute('RadioFrequency')) or 104.7
- w.hint.Text=string.format('Tune to %.1f FM and hold it there.',target)
- local disp,band,cursor,meter,holdLbl=ra.Display,ra.Band,ra.Band.Cursor,ra.Signal,ra.Hold
+ w.hint.Text='The set has drifted off its channel. Hold the button until the signal is clean.'
+ local disp,cursor,meter,holdLbl,btn=ra.Display,ra.Band.Cursor,ra.Signal,ra.Hold,ra.HoldButton
+ local fill,label=btn.Fill,btn.Label
  local bars={};for i=1,32 do bars[i]=ra.Wave['Bar'..i] end
- disp.TextColor3=GOLD;holdLbl.Text=''
- local freq=92+math.random()*4
- local held=0
+ disp.TextColor3=MUTED;holdLbl.Text=''
+ local start=target>98 and target-(6+math.random()*3) or target+(6+math.random()*3)
+ local p,holding,DUR=0,false,3.2
  local hum=self:_Sound('static',nil,0,1,true);hum.Looped=true
  w.scope:Add(function()if hum.Parent then hum:Destroy() end end)
- dragger(w,band,function(d)freq=math.clamp(freq+d.X/math.max(1,band.AbsoluteSize.X)*20,88,108) end)
- repeater(w,ra.Left,function()freq=math.clamp(freq-.1,88,108) end)
- repeater(w,ra.Right,function()freq=math.clamp(freq+.1,88,108) end)
+ w.scope:Add(btn.InputBegan:Connect(function(input)if pressed(input) then holding=true end end))
+ w.scope:Add(UIS.InputEnded:Connect(function(input)if pressed(input) then holding=false end end))
+ CAS:BindActionAtPriority('BlackwaterL4Hold',function(_,st)holding=st==Enum.UserInputState.Begin;return Enum.ContextActionResult.Sink end,false,3000,Enum.KeyCode.E,Enum.KeyCode.Space,Enum.KeyCode.ButtonX)
+ w.scope:Add(function()CAS:UnbindAction('BlackwaterL4Hold') end)
  w.scope:Add(RunService.RenderStepped:Connect(function(dt)
   if w.done then return end
+  dt=math.min(dt,.1)
+  p=math.clamp(p+(holding and dt/DUR or -dt/(DUR*1.5)),0,1)
+  local e=p*p*(3-2*p)
+  local freq=start+(target-start)*e
   cursor.Position=UDim2.fromScale((freq-88)/20,.5)
   disp.Text=string.format('%.1f FM',freq)
-  local off=math.abs(freq-target)
-  local sig=math.clamp(1-off/3,0,1)
+  local sig=math.clamp(e,0,1)
   meter.Text='SIGNAL  '..string.rep('|',math.floor(sig*16))
   hum.Volume=.05+.22*(1-sig)
   local t=os.clock()
@@ -849,11 +861,14 @@ function Controller:_JobRadio(w,body)
    local clean=math.sin(t*9+i*.5)*.5+.5
    local v=clean*sig+math.random()*(1-sig)
    b.Size=UDim2.new(b.Size.X.Scale,0,0,3+v*58)
-   b.BackgroundColor3=sig>.93 and GREEN or INK
-   b.BackgroundTransparency=.15+(1-sig)*.45
+   b.BackgroundColor3=sig>.93 and WHITE or MUTED
+   b.BackgroundTransparency=.1+(1-sig)*.45
   end
-  if off<=.2 then held+=dt;cursor.BackgroundColor3=GREEN;holdLbl.Text=string.format('hold  %d%%',math.floor(math.min(1,held/1.2)*100)) else held=0;cursor.BackgroundColor3=RED;holdLbl.Text='' end
-  if held>=1.2 then disp.TextColor3=GREEN;self:_Success(w,freq) end
+  cursor.BackgroundColor3=holding and WHITE or WRED
+  fill.Size=UDim2.fromScale(p,1)
+  label.Text=holding and 'RETUNING...' or (p>0 and 'KEEP HOLDING' or 'HOLD TO RETUNE')
+  holdLbl.Text=p>0 and string.format('%d%%',math.floor(p*100)) or ''
+  if p>=1 then disp.TextColor3=WHITE;label.Text='LOCKED';self:_Success(w,target) end
  end))
 end
 ------------------------------------------------------------------ lifecycle

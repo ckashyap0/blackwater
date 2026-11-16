@@ -14,6 +14,7 @@ return Freeze({
  },
  Text={
   Keycard='Find the keycard (check the Break Room and Monitoring)',
+  KeycardIn='Find the keycard (check the %s)', -- (Nov 13) the room it turned up in this round
   KeycardCarried='Put the keycard in the Server Room door',
   KeycardTeammate='Help your teammate get the keycard to the Server Room door',
   Jobs='Do the jobs on your list (%d/%d)',

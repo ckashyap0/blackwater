@@ -16,9 +16,9 @@ local Freeze=require(script.Parent.Parent.Utilities.TableUtil).DeepFreeze
 return Freeze({
 	Store="EHTokensV1",
 	Tokens={
-		{Id="Scare",Name="Spook Token",Attr="EHScareTokens",ProductId=3718062130,OnSale=false,Price=25,Amount=1,Model="JumpscareToken",Accent="16C454",
+		{Id="Scare",Name="Spook Token",Attr="EHScareTokens",ProductId=3731064291,OnSale=false,Price=25,Amount=1,Model="JumpscareToken",Accent="16C454",
 			Description="Scare a teammate with a jumpscare during a run."},
-		{Id="Life",Name="Extra Life Token",Attr="EHLifeTokens",ProductId=3718061900,OnSale=false,Price=49,Amount=1,Model="LifeToken",Accent="CD3E48",
+		{Id="Life",Name="Extra Life Token",Attr="EHLifeTokens",ProductId=3731064377,OnSale=false,Price=49,Amount=1,Model="LifeToken",Accent="CD3E48",
 			Description="One extra life, used up when you would go down."},
 	},
 	-- the VIP gamepass comes with one Spook Token (given once, the first time a VIP owner joins)
