@@ -9,6 +9,7 @@
 local TextService = game:GetService('TextService')
 local M = {}
 local MIN_TS, MAX_SHARE = 12, .42
+local FIXED_SIZE = true
 local tokens = setmetatable({}, {__mode = 'k'})
 local function scaleOf(box)
 	local s = 1
@@ -35,7 +36,9 @@ function M.Fit(box, line, text, baseH, baseTS, chrome)
 	local width = math.max(40, line.AbsoluteSize.X / s - 4)
 	local gui = box:FindFirstAncestorWhichIsA('LayerCollector')
 	local screenH = (gui and gui.AbsoluteSize.Y > 10) and gui.AbsoluteSize.Y or (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.Y or 720)
-	local maxH = math.max(baseH, math.floor(screenH * MAX_SHARE / s))
+	-- (Nov 16, Ryan: 'make the text boxes the same SIZE') every talk box keeps its authored height on every line:
+	-- a long line steps its text size down instead of growing the box (FIXED_SIZE = false brings the growing back)
+	local maxH = FIXED_SIZE and baseH or math.max(baseH, math.floor(screenH * MAX_SHARE / s))
 	local cap = box:FindFirstChildOfClass('UISizeConstraint'); if cap then maxH = math.min(maxH, cap.MaxSize.Y) end
 	local tsc = line:FindFirstChildOfClass('UITextSizeConstraint')
 	local minTS = tsc and math.max(MIN_TS, tsc.MinTextSize) or MIN_TS

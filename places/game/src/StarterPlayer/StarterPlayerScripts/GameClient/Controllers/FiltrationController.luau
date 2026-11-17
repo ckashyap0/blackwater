@@ -51,6 +51,11 @@ function Controller:Init()
  self._torch=gui:WaitForChild('Torch');self._torch.GroupTransparency=1
  self._black=gui:WaitForChild('Black');self._black.BackgroundTransparency=1
  gauge.GroupTransparency=1
+ self._fades={}
+ for _,g in {gauge,self._toast,self._torch}do
+  g.Visible=false;self._fades[g]=false
+  local stroke=g:FindFirstChild('Outline');if stroke then stroke.Transparency=1 end
+ end
  for _,f in {gauge,self._toast,self._torch}do
   local _,release=HudScale.Attach(f,{referenceSize=Vector2.new(960,600),min=.7,max=1.15,consoleBoost=1.15});self._scope:Add(release)
  end
@@ -85,6 +90,8 @@ function Controller:_Bind(floor)
  end
  b.monitor=Refs.Find(floor,'ChamberMonitor')
  b.fan=Refs.Find(floor,'ExtractFanRotor')
+ b.wheel=Refs.Find(floor,'BypassWheel');b.wheelBase=b.wheel and b.wheel.CFrame
+ b.roarAt=Refs.Find(floor,'GalleryKnock')
  self._bound=b
 end
 ------------------------------------------------------------------ black water film
@@ -129,6 +136,24 @@ function Controller:_Beds(b,floor,now)
   end
  end
 end
+------------------------------------------------------------------ the bypass wheel and main
+-- Each finished turn swings the wheel round (WheelTurn<n>At); the bypass main along the gallery roof starts
+-- to roar at the first turn and is at full flow by the third.
+function Controller:_Bypass(b,floor,now)
+ local angle,flow=0,0
+ for i=1,Config.Wheel.Turns do
+  local at=floor:GetAttribute('WheelTurn'..i..'At')
+  if type(at)=='number' then local u=smooth((now-at+.2)/1.6);angle+=u*math.pi*1.5;flow+=u end
+ end
+ if b.wheel and b.wheelAngle~=angle then b.wheelAngle=angle;b.wheel.CFrame=b.wheelBase*CFrame.Angles(angle,0,0) end
+ if flow>0 and b.roarAt then
+  if not b.roar then
+   local s=Instance.new('Sound');s.Name='BypassMainRoar';s.SoundId=Config.Sounds.drone;s.Looped=true;s.Volume=0;s.PlaybackSpeed=.42
+   s.RollOffMinDistance=24;s.RollOffMaxDistance=170;s.Parent=b.roarAt;s:Play();b.roar=s
+  end
+  b.roar.Volume=(MartyGrey.Active and .04 or .16*flow)
+ end
+end
 ------------------------------------------------------------------ fumes and haze
 function Controller:_Fumes(b,floor,now,dt,eye)
  local active=floor:GetAttribute('FumesActive')==true
@@ -145,7 +170,13 @@ function Controller:_Fumes(b,floor,now,dt,eye)
   local spin=smooth((now-fanAt)/Config.Fumes.FanSpinUp)
   b.fanAngle=((b.fanAngle or 0)+dt*spin*14)%(math.pi*2)
   if not b.fanBase then b.fanBase=b.fan.CFrame end
-  b.fan.CFrame=b.fanBase*CFrame.Angles(b.fanAngle,0,0)
+  b.fan.CFrame=b.fanBase*CFrame.Angles(0,0,b.fanAngle)
+  -- and it roars: loud enough to hide footsteps
+  if not b.fanSound then
+   local s=Instance.new('Sound');s.Name='ExtractFanLoop';s.SoundId=Config.Sounds.fan~='' and Config.Sounds.fan or Config.Sounds.motor;s.Looped=true;s.Volume=0;s.PlaybackSpeed=1.5
+   s.RollOffMinDistance=10;s.RollOffMaxDistance=90;s.Parent=b.fan;s:Play();b.fanSound=s
+  end
+  b.fanSound.Volume=.55*spin;b.fanSound.PlaybackSpeed=.6+.9*spin
  end
  -- close ochre fog while you stand in it
  local z=b.fumeZone;local inZone=false
@@ -195,11 +226,15 @@ function Controller:_Haze(dt)
 end
 ------------------------------------------------------------------ HUD
 function Controller:_Fade(group,shown)
- local key=group
  self._fades=self._fades or {}
- if self._fades[key]==shown then return end
- self._fades[key]=shown
- TweenService:Create(group,EASE,{GroupTransparency=shown and 0 or 1}):Play()
+ if self._fades[group]==shown then return end
+ self._fades[group]=shown
+ -- (a UIStroke does not follow GroupTransparency: fade the outline with the panel and hide it when gone)
+ local stroke=group:FindFirstChild('Outline')
+ if shown then group.Visible=true end
+ local tween=TweenService:Create(group,EASE,{GroupTransparency=shown and 0 or 1});tween:Play()
+ if stroke then TweenService:Create(stroke,EASE,{Transparency=shown and .35 or 1}):Play() end
+ if not shown then tween.Completed:Connect(function()if self._fades[group]==false then group.Visible=false end end) end
 end
 function Controller:_Hud(floor,dt)
  local p=self._player
@@ -327,7 +362,7 @@ function Controller:Start()
   local b=self._bound
   if floor and b then
    local ok,err=pcall(function()
-    self:_Film(b,dt,eye);self:_Beds(b,floor,now);self:_Fumes(b,floor,now,dt,eye);self:_Knocks(floor);self:_Monitor(b,floor,now)
+    self:_Film(b,dt,eye);self:_Beds(b,floor,now);self:_Fumes(b,floor,now,dt,eye);self:_Bypass(b,floor,now);self:_Knocks(floor);self:_Monitor(b,floor,now)
    end)
    if not ok and not self._warned then self._warned=true;warn('[ElevatorHorror] Level 3 client: '..tostring(err)) end
   elseif self._fogBase then

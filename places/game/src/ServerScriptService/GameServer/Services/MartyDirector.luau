@@ -123,6 +123,8 @@ function M.Start(service)
 						local duringGate = i == 1 and type(closed) == 'number' and now >= closed + .3
 						-- (and he never slips away from the gate before it has shut)
 						if i == 1 and type(closed) ~= 'number' then onward = false end
+						-- (Nov 16, Ryan) he does not turn up again on the surface: when the gate shuts he is gone for good
+						if duringGate then marty:Destroy();yardState[yard]=#ORDER+1 continue end
 						if duringGate or (onward and not talking(now) and not seen(chest(marty), marty) and not seen(stand.Position + Vector3.new(0, 3, 0), marty)) then
 							moveTo(marty, stand, nextSpot.sets)
 							yardState[yard] = i + 1

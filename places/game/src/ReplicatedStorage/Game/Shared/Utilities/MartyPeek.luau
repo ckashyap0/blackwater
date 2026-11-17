@@ -15,8 +15,9 @@
 --   HideShift  studs he stands further left while hidden (default 1.2)
 --
 -- What you see: you look down the hall at the corner and his head, shoulder and both hands lean out past the
--- edge and hold (he smirks). While he is out he flickers grey a few times, each flick with an electric crackle
--- over a low static bed. Then he turns his face in and pulls back fast, hands last. One second after the last
+-- edge and hold (he smirks). (Nov 16) His eyes glow while he is out (MartyStages.PeekRig.EyeGlow) and a few times
+-- they cut out for a frame, each with an electric crackle over a low static bed. He is never grey any more.
+-- (Nov 16) He only peeks once the Marty who met the crew by the lift has gone, so there are never two of him. Then he turns his face in and pulls back fast, hands last. One second after the last
 -- of him is gone, the model is removed. A heartbeat starts on the first sound and runs fast, then fades out
 -- slowing down. The copy only ever appears or disappears while it is hidden behind the wall from YOUR camera.
 -- Once per marker per player. He never touches or chases anyone.
@@ -106,62 +107,11 @@ local function bvec(t) return BLEND:VectorToWorldSpace(Vector3.new(t[1], t[2], t
 
 -- the rig copy: placed so its rest skeleton sits on the marker exactly as the Blender rig sits on its origin,
 -- and every pose turned into bone Transforms once (so blending is a Lerp per bone)
+local Rig = require(script.Parent.MartyRig)
+-- the rig copy (Utilities.MartyRig): placed so its rest skeleton sits on the marker exactly as the Blender rig sits on
+-- its origin, and every pose turned into bone Transforms once (so blending is a Lerp per bone)
 local function build(marker)
-	local stages = game:GetService('ReplicatedStorage'):FindFirstChild('MartyStages')
-	local tpl = stages and stages:FindFirstChild('PeekRig')
-	if not tpl or not tpl.PrimaryPart then return nil end
-	local m = tpl:Clone()
-	local bones, parts = {}, {}
-	for _, d in m:GetDescendants() do
-		if d:IsA('Bone') then bones[d.Name] = d
-		elseif d:IsA('BasePart') then d.Anchored = true; d.CanCollide = false; d.CanQuery = false; d.CanTouch = false; table.insert(parts, d) end
-	end
-	for _, n in Poses.Order do if not bones[n] then m:Destroy() return nil end end
-	-- fit: a frame on hips/head/legs in both spaces gives the turn, the head-hips length gives the scale
-	local function frame(lt, head, ll, rl)
-		local up = (head - lt).Unit
-		local r = rl - ll; r = (r - up * r:Dot(up)).Unit
-		return CFrame.fromMatrix(lt, r, up)
-	end
-	local P = function(n) return bones[n].WorldPosition end
-	local Q = function(n) return bvec(Poses.Rest[n]) end
-	local s = (P('Head') - P('LowerTorso')).Magnitude / (Q('Head') - Q('LowerTorso')).Magnitude
-	local Gp = frame(P('LowerTorso'), P('Head'), P('LeftUpperLeg'), P('RightUpperLeg'))
-	local Gq = frame(Q('LowerTorso') * s, Q('Head') * s, Q('LeftUpperLeg') * s, Q('RightUpperLeg') * s)
-	local feet = marker.CFrame
-	m:PivotTo(feet * Gq * Gp:Inverse() * m:GetPivot())
-	local root = m.PrimaryPart
-	local rest = {}
-	for _, n in Poses.Order do rest[n] = bones[n].WorldCFrame end
-	local inv = feet:Inverse()
-	local tf = {}
-	for name, pose in Poses.Poses do
-		local want, t = {}, {}
-		for _, n in Poses.Order do
-			local d = pose[n]
-			local rot = BLEND * CFrame.new(0, 0, 0, d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9]) * BLEND:Inverse()
-			local change = feet * (CFrame.new(bvec({d[10], d[11], d[12]}) * s) * rot) * inv
-			want[n] = change * rest[n]
-			local par = Poses.Parents[n]
-			local pw = par and want[par] or root.CFrame
-			t[n] = (pw * bones[n].CFrame):Inverse() * want[n]
-		end
-		tf[name] = t
-	end
-	-- the grey looks (one SurfaceAppearance per part, swapped in for a few frames)
-	local greys, normals = {}, {}
-	local gl = m:FindFirstChild('GreyLooks')
-	if gl then
-		for _, g in gl:GetChildren() do
-			local part = m:FindFirstChild(g.Name)
-			local sa = part and part:FindFirstChildOfClass('SurfaceAppearance')
-			if sa then greys[part] = g; normals[part] = sa end
-		end
-		gl.Parent = nil
-		task.spawn(function() pcall(function() ContentProvider:PreloadAsync(gl:GetChildren()) end) end)
-	end
-	local clip = m:FindFirstChild('Clipboard'); if clip then clip:Destroy() end
-	return {model = m, bones = bones, tf = tf, base = m:GetPivot(), feet = feet, greys = greys, normals = normals, scale = s}
+	return Rig.Build(marker.CFrame, Poses.Poses)
 end
 
 local function pose(a, from, to, u)
@@ -174,13 +124,11 @@ local function place(a, hide) -- hide 0..1: how far he stands back to his left
 	a.model:PivotTo(a.base + shift)
 end
 
+-- (Nov 16, Ryan: no grey Marty) a "flick" now cuts his glowing eyes out for a frame or two instead
 local function grey(a, on)
 	if a.isGrey == on then return end
 	a.isGrey = on
-	for part, g in a.greys do
-		local n = a.normals[part]
-		if on then n.Parent = nil; g.Parent = part else g.Parent = nil; n.Parent = part end
-	end
+	Rig.Eyes(a, on and 0 or 1)
 end
 
 local function pointAt(a, which, bone, lift)
@@ -210,7 +158,16 @@ local function finish(a)
 	active = nil
 end
 
+local function otherMarty(marker)
+	local floor = floorOf(marker)
+	for _, m in CS:GetTagged('MartyNPC') do
+		if m:IsDescendantOf(workspace) and (not floor or m:IsDescendantOf(floor)) then return true end
+	end
+	return false
+end
+
 local function tryPlace(marker, cam, root, char)
+	if otherMarty(marker) then return end -- (Nov 16) never two of him
 	local maxD = marker:GetAttribute('ViewMax') or 42
 	local minD = marker:GetAttribute('ViewMin') or 15
 	local d = (root.Position - marker.Position).Magnitude
@@ -256,7 +213,7 @@ local function step(a, cam, root, char, dt, now)
 		end
 	elseif a.phase == 'out' then
 		local u = smoother((now - a.t0) / OUT_T)
-		pose(a, 'D', 'A', u); place(a, 1 - u)
+		pose(a, 'D', 'A', u); place(a, 1 - u); Rig.Eyes(a, u)
 		if a.static then a.static.Volume = .09 * u end
 		if u >= 1 then a.phase = 'hold'; a.t0 = now; a.flick = 1 end
 	elseif a.phase == 'hold' then
@@ -287,6 +244,7 @@ local function step(a, cam, root, char, dt, now)
 		local e = seg[2] == 'D' and smoother(u) or u * u * (3 - 2 * u)
 		pose(a, seg[1], seg[2], e)
 		if seg[2] == 'D' then place(a, e) end
+		if a.seg == 1 then Rig.Eyes(a, 1 - e) elseif a.seg == 2 then Rig.Eyes(a, 0) end
 		if a.static then a.static.Volume = .09 * (1 - (a.seg - 1 + u) / #RETRACT) end
 		if u >= 1 then
 			if a.seg < #RETRACT then a.seg += 1; a.t0 = now

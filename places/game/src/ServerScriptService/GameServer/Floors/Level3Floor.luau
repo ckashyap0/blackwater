@@ -168,6 +168,7 @@ function Floor:_StartFan()
  local m=self.Model
  m:SetAttribute('ExtractFanAt',self:_Now())
  task.delay(Config.Fumes.FanSpinUp+Config.Fumes.ThinSeconds,function()if self._state~='Stopped' then m:SetAttribute('FumesActive',false) end end)
+ fx('pilot',function()local pilot=Ref(m,'FanPilot');if pilot then pilot.Color=Color3.fromRGB(90,255,120);local li=pilot:FindFirstChildWhichIsA('Light');if li then li.Color=pilot.Color end end end)
  self:_SetStage('Dosing')
 end
 function Floor:_StopPump(i)
@@ -182,6 +183,14 @@ function Floor:_CloseInlet(i)
  self._inlets[i]=true;self._inletCount+=1;self:_Progress()
  self.Model:SetAttribute('Inlet'..i..'ClosedAt',self:_Now())
  self._water:SetRest(i,Config.Light.InletRest) -- every repair lets it go further
+ -- the console: lever thrown, pilot lamp green to red
+ fx('console',function()
+  local m=self.Model
+  local lever=Ref(m,'ConsoleLever'..i);local model=lever and lever.Parent
+  if model and model:IsA('Model') then model:PivotTo(model:GetPivot()*CFrame.Angles(math.rad(-56),0,0)) end
+  local pilot=Ref(m,'ConsolePilot'..i)
+  if pilot then pilot.Color=Color3.fromRGB(255,60,50);local li=pilot:FindFirstChildWhichIsA('Light');if li then li.Color=pilot.Color end end
+ end)
  if self._inletCount==3 then self:_Marty('C3') end
  if self._inletCount==4 then task.delay(1.5,function()if self._state~='Stopped' then self:_Knock('BedWater4') end end) end
  if self._inletCount>=6 then self:_SetStage('Bypass') else self:_Publish() end
@@ -212,7 +221,10 @@ function Floor:_TurnWheel(player)
   m:SetAttribute('ChamberLampOffAt',t+1.2);m:SetAttribute('HB3OffAt',t+1.2)
   fx('lamps',function()
    task.delay(1.2,function()
-    for _,n in {'ChamberLamp','HB3'} do local lamp=Ref(m,n);local li=lamp and lamp:FindFirstChildWhichIsA('Light');if li then li.Enabled=false end end
+    for _,n in {'ChamberLamp','HB3'} do
+     local lamp=Ref(m,n);local li=lamp and lamp:FindFirstChildWhichIsA('Light');if li then li.Enabled=false end
+     if lamp then lamp.Material=Enum.Material.Glass;lamp.Color=Color3.fromRGB(70,64,54) end
+    end
    end)
   end)
  end

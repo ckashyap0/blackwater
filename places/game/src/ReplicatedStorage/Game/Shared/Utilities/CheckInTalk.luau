@@ -162,7 +162,9 @@ function M.Start()
 	local function smooth(x) x = math.clamp(x, 0, 1) return x * x * (3 - 2 * x) end
 	local sw, nextLook, lastIndex = nil, 0, nil
 	local Tick = require(script.Parent.DialogueTick); Tick.Preload()
+	local Guard = require(script.Parent.TalkGuard)
 	RunService.RenderStepped:Connect(function()
+		if Guard.Blocked() then if gui.Enabled then gui.Enabled = false end; lastIndex = nil; return end -- (Nov 16) never over a scene change
 		if not (sw and sw:IsDescendantOf(workspace)) then
 			sw = nil
 			if gui.Enabled then gui.Enabled = false end

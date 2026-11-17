@@ -489,7 +489,8 @@ function Controller:_Travel(cabin,dt)
  local reduced=self._player:GetAttribute('EHReduceMotion')==true
  -- brakes release: a heavy clunk and a short drop of the cabin just after the doors shut (the
  -- server swaps the floors out at this exact moment, so any hitch reads as the lift lurching)
- if self._lurchFor~=started then
+ local smooth=cabin:GetAttribute('TravelFromFloor')==5 -- (Nov 16, Ryan) the ride down from Level 5 is smooth: no clunk, no dips
+ if self._lurchFor~=started and not smooth then
   self._lurchFor=started
   task.delay(math.max(0,.28-e),function()
    local s=Instance.new('Sound');s.SoundId='rbxassetid://9114533169';s.Volume=.2;s.PlaybackSpeed=.7;s.Parent=game:GetService('SoundService');s:Play()
@@ -499,7 +500,7 @@ function Controller:_Travel(cabin,dt)
  -- (Nov 13, Ryan: 'stopping to moving isn't smooth') no jolt any more: the cabin settles a few
  -- hundredths of a stud as the brakes let go and again as it comes to rest, both on smooth curves
  -- (zero speed at each end), so stop -> move -> stop reads as one seamless motion
- if camera and not reduced then
+ if camera and not reduced and not smooth then
   local function bump(x)if x<=0 or x>=1 then return 0 end;return math.sin(x*math.pi)^2 end
   local dip=bump((e-.15)/1.1)*.05+bump((e-(dur-1.1))/1.1)*.035
   if dip>0 then camera.CFrame*=CFrame.new(0,-dip,0) end

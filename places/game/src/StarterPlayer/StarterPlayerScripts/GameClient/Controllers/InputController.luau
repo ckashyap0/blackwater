@@ -332,6 +332,7 @@ function Controller:Start()
 	local p=self._player
 	local spawnedAt=os.clock()
 	self._scope:Add(p.CharacterAdded:Connect(function()spawnedAt=os.clock();Lock.heldRot=nil;Lock.returnRot=nil end))
+	task.spawn(function() pcall(function() require(Shared.Utilities.TouchSafeControls).Install() end) end) -- (Nov 16) touch pad stays on screen while controls are off
 	local held=nil -- humanoid values to give back when the lock ends
 	local controls=nil
 	local function playerControls()

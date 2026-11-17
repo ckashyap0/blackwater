@@ -12,7 +12,7 @@ local ok,err=xpcall(function()
 	local suites={"TestScenarios","PersistenceChecks","RunChecks","CharacterChecks","InteractionChecks","SurvivalChecks","PartySessionChecks","LobbyChecks"}
 	local config=require(game.ReplicatedStorage.Game.Shared.Config.PlaceConfig)
 	if config.Resolve(game.PlaceId,true,workspace:GetAttribute("EHStudioPlaceRole"))=="Game"then
-		table.insert(suites,"ElevatorChecks");table.insert(suites,"Level5Checks");table.insert(suites,"FinalPolishChecks")
+		table.insert(suites,"ElevatorChecks");table.insert(suites,"Level5Checks");table.insert(suites,"Level3Checks");table.insert(suites,"FinalPolishChecks")
 	end
 	for _,name in suites do
 		task.wait() -- each suite gets its own execution slice (the whole set no longer fits in one)

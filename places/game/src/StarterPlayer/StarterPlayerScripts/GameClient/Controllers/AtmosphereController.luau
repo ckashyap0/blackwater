@@ -305,8 +305,8 @@ function Controller:_SurfaceSky(on)
  end
 end
 function Controller:_Daylight()
- -- (Nov 15) Marty on the lift ceiling, on the ride from Level 5 down to Level 4 (Shared.Utilities.MartyCeiling)
- pcall(require(Shared.Utilities.MartyCeiling).Step)
+ -- (Nov 16) Marty's half-second glitch flash on the ride from Level 5 down to Level 4 (Shared.Utilities.MartyFlash)
+ pcall(require(Shared.Utilities.MartyFlash).Step)
  local runtime=workspace:FindFirstChild('Runtime');local env=runtime and runtime:FindFirstChild('DescentEnvironment');local cabin=env and env:FindFirstChild('Elevator')
  local on=cabin and cabin:GetAttribute('Boarding')==true or false
  local descendAt=cabin and cabin:GetAttribute('DescendAt')

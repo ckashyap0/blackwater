@@ -54,6 +54,8 @@ function M.Start()
 	for _, b in meter:GetChildren() do if b:IsA('Frame') then table.insert(bars, b) end end
 	table.sort(bars, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
 	local baseH, baseTS = box.Size.Y.Offset, line.TextSize
+	local outline = box:FindFirstChild('Outline')
+	local outlineBase = outline and outline.Transparency or 0
 	local lampOn, lampOff = lamp.BackgroundColor3, lamp.BackgroundColor3:Lerp(Color3.new(0, 0, 0), .75)
 	local static = sound(Config.Sounds.static, 0, 1, true)
 	local shownAt = nil
@@ -79,7 +81,7 @@ function M.Start()
 			face.Visible = crew; noVideo.Visible = not crew
 			if crew then headshot(id, face) end
 			gui.Enabled = true
-			task.spawn(Fit.Fit, box, line, text, baseH, baseTS, baseH - line.AbsoluteSize.Y)
+			task.spawn(Fit.Fit, box, line, text, baseH, baseTS, -line.Size.Y.Offset) -- (the line fills the box under the header rows)
 			local sq = sound(Config.Sounds.squelch, .22 * M.Volume, kind == 'Old' and .8 or 1)
 			sq:Play(); task.delay(3, function() sq:Destroy() end)
 			static.PlaybackSpeed = kind == 'Old' and .85 or 1
@@ -93,6 +95,7 @@ function M.Start()
 		Tick.Step(tostring(at), shown, text)
 		local a = smooth(t / M.FadeIn) * smooth((total - t) / M.FadeOut)
 		box.GroupTransparency = 1 - a
+		if outline then outline.Transparency = 1 - (1 - outlineBase) * a end -- (a UIStroke does not follow GroupTransparency)
 		-- the call lamp and the level meter move while the voice is speaking
 		local speaking = k > 0 and k < 1
 		local now = os.clock()
