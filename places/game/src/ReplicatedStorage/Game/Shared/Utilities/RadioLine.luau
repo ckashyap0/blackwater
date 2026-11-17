@@ -94,6 +94,7 @@ function M.Start()
 		line.MaxVisibleGraphemes = k >= 1 and -1 or shown
 		Tick.Step(tostring(at), shown, text)
 		local a = smooth(t / M.FadeIn) * smooth((total - t) / M.FadeOut)
+		if player:GetAttribute('EHCinematic') then a = 0 end -- (R43) the box steps away during a camera cut
 		box.GroupTransparency = 1 - a
 		if outline then outline.Transparency = 1 - (1 - outlineBase) * a end -- (a UIStroke does not follow GroupTransparency)
 		-- the call lamp and the level meter move while the voice is speaking

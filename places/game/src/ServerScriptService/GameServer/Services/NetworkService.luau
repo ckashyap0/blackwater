@@ -58,7 +58,7 @@ function Service:Receive(player,channel,packet)
 		elseif action=="BeginCrouch" or action=="EndCrouch" then
 			accepted,code=self._characters:SetCrouch(player,payload.characterEpoch,action=="BeginCrouch")
 		elseif action=="BeginInteraction" then accepted,code=self._interactions:Begin(player,payload.interactionId,payload.characterEpoch)
-		elseif action=="ContinueInteraction" then accepted,code=self._interactions:Continue(player,payload.interactionId,payload.characterEpoch)
+		elseif action=="ContinueInteraction" then accepted,code=self._interactions:Continue(player,payload.interactionId,payload.characterEpoch,payload.work)
 		elseif action=="EndInteraction" then accepted,code=self._interactions:Cancel(player,"Released",payload.interactionId,payload.characterEpoch)
 		elseif action=="FlashlightAim" then accepted,code=self._equipment:SetAim(player,payload.characterEpoch,payload.yaw,payload.pitch)
 		elseif action=="ToggleFlashlight" then accepted,code=self._equipment:Toggle(player,payload.characterEpoch,payload.on)

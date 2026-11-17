@@ -362,6 +362,9 @@ function Service:_Load(snapshot)
 			RegisterInteraction=function(def)
 				def=table.clone(def);def.runId=snapshot.runId;def.floorInstanceId=id;scope:Add(self._interactions:Register(def))
 			end,
+			-- (R43) work progress of a Crank/Lever/Pump job (turns, pulls, strokes), and setting it (resets)
+			GetInteractionProgress=function(interactionId)return self._interactions:GetProgress(interactionId)end,
+			SetInteractionProgress=function(interactionId,value)return self._interactions:SetProgress(interactionId,value)end,
 			RegisterItem=function(itemId,kind,part,opts)return self._inventory:RegisterItem(itemId,kind,id,part,opts)end,
 			RegisterSocket=function(itemId,kind,part)return self._inventory:RegisterSocket(itemId,kind,id,part)end,
 			EmitNoise=function(event)if live() and not self._survival:IsEncounterSuspended()then noise:Fire(event)end end,

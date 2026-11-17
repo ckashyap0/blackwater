@@ -33,6 +33,8 @@ end
 function M.Start()
 	if started or not RunService:IsClient() or not phone() then return end
 	started = true
+	-- (R43) set pieces (SetPieceFX) halve their particles on this screen
+	pcall(function() game:GetService('Players').LocalPlayer:SetAttribute('EHLowFx', true) end)
 	task.spawn(function()
 		while true do
 			local runtime = workspace:FindFirstChild('Runtime')

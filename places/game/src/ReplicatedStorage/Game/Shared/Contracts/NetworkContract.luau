@@ -56,6 +56,12 @@ function Contract.ValidateAction(packet: any): (boolean,string)
 		return Validation.HasExactKeys(packet.payload,{ready=true},1) and type(packet.payload.ready)=="boolean","InvalidReadiness"
 	elseif packet.action=="RequestSnapshot" or packet.action=="PartyLeave" or packet.action=="PartyLaunch" or packet.action=="ReconnectRun" or packet.action=="ReturnLobby" then
 		if not Validation.HasExactKeys(packet.payload,{},0) then return false,"InvalidPayload" end
+	elseif packet.action=="ContinueInteraction" and type(packet.payload)=="table" and packet.payload.work~=nil then
+		-- (R43) the effort done since the last report on a Crank/Lever/Pump job; the server caps it
+		local p=packet.payload
+		return Validation.HasExactKeys(p,{characterEpoch=true,interactionId=true,work=true},3)
+			and Validation.IsInteger(p.characterEpoch,1,2147483647) and Validation.IsIdentifier(p.interactionId,64)
+			and type(p.work)=="number" and p.work==p.work and p.work>=0 and p.work<=20,"InvalidPayload"
 	else
 		local interaction=packet.action=="BeginInteraction" or packet.action=="ContinueInteraction" or packet.action=="EndInteraction"
 		local keys=interaction and {characterEpoch=true,interactionId=true} or {characterEpoch=true}

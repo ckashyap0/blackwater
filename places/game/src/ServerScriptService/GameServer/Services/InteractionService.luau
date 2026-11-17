@@ -9,6 +9,21 @@ local Service={};Service.__index=Service
 -- Every hold in the game takes this much longer than the time its interaction asks for, so
 -- nothing completes from a quick tap (the progress bar reads the final duration).
 Service.HoldBonus=.5
+-- (R43) How a job is worked (def.mode):
+--   Hold   keep E down for holdDuration (the original behaviour, still the default).
+--   Crank  turn it: circle the mouse, the right stick or a finger. Progress = turns (def.work).
+--   Lever  pull it down: drag the mouse, stick or finger down. Progress = pulls (def.work).
+--   Pump   tap E in a steady beat. Each tap inside pumpGap counts one stroke (def.work strokes).
+--          With def.decay the progress drains while nobody pumps, and with def.sustain it never
+--          completes: the floor reads it as a level (header pressure).
+--   Sync   a Hold that only completes when def.syncNeed() players finish holds in the same
+--          def.syncGroup at the same time (each waits at full until the others catch up).
+-- Work modes count effort, not time. The client reports what it did (ContinueInteraction.work) and the
+-- server never credits more than def.maxRate per second, times def.rate(player) (0 stalls the job).
+-- Progress is published on the target (EHWorkProgress, 0-1) so every client can move the wheel or lever.
+local MODES={Hold=true,Crank=true,Lever=true,Pump=true,Sync=true}
+local WORK={Crank={maxRate=1.1},Lever={maxRate=1.6},Pump={maxRate=0}}
+Service.Modes=MODES;Service.WorkModes=WORK
 function Service.new(options)
 	options=options or {}
 	return setmetatable({Name="InteractionService",Dependencies={"GameRunService","CharacterService"},
@@ -29,8 +44,20 @@ function Service:Register(def)
 	assert(type(def.holdDuration)=="number" and def.holdDuration>=0 and def.holdDuration<=30,"Invalid hold")
 	def.requiresLineOfSight=def.requiresLineOfSight~=false;def.exclusive=def.exclusive~=false
 	def.enabled=def.enabled~=false;def.allowedLifeStates=def.allowedLifeStates or {Alive=true}
+	def.mode=def.mode or "Hold"
+	assert(MODES[def.mode],"Invalid interaction mode")
+	if WORK[def.mode] then
+		def.work=def.work or 1;def.progress=math.clamp(def.progress or 0,0,def.work)
+		assert(type(def.work)=="number" and def.work>0 and def.work<=50,"Invalid work")
+		def.maxRate=def.maxRate or WORK[def.mode].maxRate
+		def.persist=def.persist~=false
+		if def.mode=="Pump" then def.pumpGap=def.pumpGap or {min=.22,max=1.2} end
+	end
+	if def.mode=="Sync" then assert(V.IsIdentifier(def.syncGroup,64),"Sync needs a group") end
 	self._defs[def.interactionId]=def
 	local t=def.target;t:SetAttribute("EHInteractionId",def.interactionId);t:SetAttribute("EHInteractionType",def.interactionType or "Generic")
+	t:SetAttribute("EHInteractionMode",def.mode);t:SetAttribute("EHWork",def.work)
+	t:SetAttribute("EHWorkProgress",def.work and def.progress/def.work or nil)
 	t:SetAttribute("EHInteractionLabel",def.label or "Use");t:SetAttribute("EHHoldDuration",def.holdDuration)
 	t:SetAttribute("EHMaximumDistance",def.maximumDistance);t:SetAttribute("EHInteractionEnabled",def.enabled)
 	Tags:AddTag(t,"EHInteractable")
@@ -48,6 +75,23 @@ function Service:SetHoldScale(id,scale)
 	local d=self._defs[id];if not d or type(scale)~="number" or scale<=0 then return false end
 	d.holdDuration=math.clamp(d.baseHoldDuration*scale,0,30);d.target:SetAttribute("EHHoldDuration",d.holdDuration)
 	return true
+end
+-- (R43) work progress of a Crank/Lever/Pump job, in its own units (turns, pulls, strokes)
+function Service:GetProgress(id)
+	local d=self._defs[id];if not d or not d.work then return nil end
+	return d.progress,d.work
+end
+function Service:SetProgress(id,value)
+	local d=self._defs[id];if not d or not d.work or type(value)~="number" or value~=value then return false end
+	self:_SetWork(d,value);return true
+end
+function Service:_SetWork(d,value)
+	value=math.clamp(value,0,d.work)
+	if value==d.progress then return end
+	d.progress=value
+	-- (published in steps of 1% so the attribute does not change every frame)
+	local f=math.floor(value/d.work*100+.5)/100
+	if d.target:GetAttribute("EHWorkProgress")~=f then d.target:SetAttribute("EHWorkProgress",f) end
 end
 function Service:Unregister(id)
 	local d=self._defs[id];if not d then return end
@@ -101,17 +145,42 @@ function Service:Begin(player,id,epoch)
 	local ok,phase=self:_Validate(player,d,epoch);if not ok then self:_Notify(player,"Rejected",nil,phase);return false,phase end
 	if self._holds[player] then return false,"AlreadyInteracting" end
 	if d.exclusive and self._locks[id] then self:_Notify(player,"Rejected",nil,"Busy");return false,"Busy" end
+	if d.work and not d.sustain and d.progress>=d.work then self:_Notify(player,"Rejected",nil,"AlreadyDone");return false,"AlreadyDone" end
 	local now=self._clock()
-	self._holds[player]={id=id,epoch=epoch,phase=phase,started=now,expires=now+1.5}
+	self._holds[player]={id=id,epoch=epoch,phase=phase,started=now,expires=now+1.5,lastWork=now,lastPulse=-math.huge}
 	if d.exclusive then self._locks[id]=player end
-	self:_Notify(player,"Holding",id,nil,workspace:GetServerTimeNow(),d.holdDuration)
+	self:_Notify(player,"Holding",id,nil,workspace:GetServerTimeNow(),d.work and 0 or d.holdDuration)
 	return true,"Started"
 end
-function Service:Continue(player,id,epoch)
+-- keepalive, and for work modes the effort done since the last report (turns, pulls, or one pump stroke)
+function Service:Continue(player,id,epoch,work)
 	local h=self._holds[player]
 	if not h or h.id~=id or h.epoch~=epoch then return false,"NoMatchingHold" end
-	if self._clock()>h.expires then self:Cancel(player,"Expired");return false,"HoldExpired" end
-	h.expires=self._clock()+1.5;return true,"Continued"
+	local now=self._clock()
+	if now>h.expires then self:Cancel(player,"Expired");return false,"HoldExpired" end
+	h.expires=now+1.5
+	local d=self._defs[id]
+	if work~=nil and d and d.work then
+		if type(work)~="number" or work~=work or work<0 or work>20 then return false,"InvalidWork" end
+		local scale=1;if d.rate then local ok,r=pcall(d.rate,player);scale=ok and type(r)=="number" and math.clamp(r,0,1) or 0 end
+		local add=0
+		if d.mode=="Pump" then
+			local gap=now-h.lastPulse
+			if work>0 and gap>=d.pumpGap.min then add=1;h.lastPulse=now end
+		else
+			-- never more than maxRate per second since the last report (plus a little for network jitter)
+			add=math.min(work,d.maxRate*math.min(now-h.lastWork,1)*1.3+.03)
+		end
+		h.lastWork=now
+		if add>0 then
+			self:_SetWork(d,d.progress+add*scale)
+			if not d.sustain and d.progress>=d.work-1e-6 then
+				local ok,phase=self:_Validate(player,d,h.epoch)
+				if ok and phase==h.phase then self:_Complete(player,h,d) end
+			end
+		end
+	end
+	return true,"Continued"
 end
 -- Letting go the instant the bar fills: the release can reach the server a moment before its own
 -- completion check runs, which used to throw the finished hold away (bar full, task not done). A
@@ -120,16 +189,35 @@ local RELEASE_GRACE=.2
 function Service:Cancel(player,reason,id,epoch)
 	local h=self._holds[player]
 	if not h or (id and h.id~=id) or (epoch and h.epoch~=epoch) then return false,"NoMatchingHold" end
-	if reason=="Released" then
-		local d=self._defs[h.id]
-		if d and self._clock()-h.started>=d.holdDuration-RELEASE_GRACE then
+	local d=self._defs[h.id]
+	if reason=="Released" and d and not d.work and not h.ready then
+		if self._clock()-h.started>=d.holdDuration-RELEASE_GRACE then
 			local ok,phase=self:_Validate(player,d,h.epoch)
-			if ok and phase==h.phase then self:_Complete(player,h,d);return true,"Completed" end
+			if ok and phase==h.phase then
+				if d.mode~="Sync" then self:_Complete(player,h,d);return true,"Completed" end
+				h.ready=true;self:_TrySync(d.syncGroup)
+				if self._holds[player]~=h then return true,"Completed" end
+			end
 		end
 	end
 	self._holds[player]=nil;if self._locks[h.id]==player then self._locks[h.id]=nil end
+	if d and d.work and not d.persist then self:_SetWork(d,0) end
 	self:_Notify(player,"Canceled",nil,reason or "Released")
 	return true,"Canceled"
+end
+-- (R43) Sync: complete every ready hold in the group once enough different players are ready together
+function Service:_TrySync(group)
+	local ready={};local need=1
+	for player,h in self._holds do
+		local d=self._defs[h.id]
+		if d and d.mode=="Sync" and d.syncGroup==group and h.ready then
+			table.insert(ready,{player=player,h=h,d=d})
+			if d.syncNeed then local ok,n=pcall(d.syncNeed);if ok and type(n)=="number" then need=math.max(need,math.floor(n)) end else need=math.max(need,2) end
+		end
+	end
+	if #ready<need then return false end
+	for _,r in ready do self:_Complete(r.player,r.h,r.d) end
+	return true
 end
 function Service:_Step()
 	local now=self._clock()
@@ -138,9 +226,24 @@ function Service:_Step()
 		local ok,phase=false,"Removed"
 		if d then ok,phase=self:_Validate(player,d,h.epoch) end
 		if not ok or phase~=h.phase or now>h.expires then self:Cancel(player,not ok and phase or "Interrupted")
-		elseif now-h.started>=d.holdDuration then
-			self:_Complete(player,h,d)
+		elseif not d.work and not h.ready and now-h.started>=d.holdDuration then
+			if d.mode=="Sync" then
+				h.ready=true;self:_Notify(player,"Waiting",h.id,"WaitingForCrew")
+				self:_TrySync(d.syncGroup)
+			else self:_Complete(player,h,d) end
 		end
+	end
+	-- pumps drain while nobody keeps the beat
+	for _,d in self._defs do
+		if d.mode=="Pump" and d.decay and d.progress>0 then
+			local beating=false
+			for _,h in self._holds do if h.id==d.interactionId and now-h.lastPulse<=d.pumpGap.max then beating=true end end
+			if not beating then
+				local dt=now-(d.lastDecay or now)
+				self:_SetWork(d,d.progress-d.decay*math.min(dt,.5))
+			end
+			d.lastDecay=now
+		else d.lastDecay=now end
 	end
 end
 -- The bar is full: run the job's completion (which marks the task solved and updates the
@@ -166,7 +269,5 @@ function Service:Destroy()
 	for p in self._holds do self:Cancel(p,"Shutdown") end
 	for id in self._defs do self:Unregister(id) end
 	if self._scope then self._scope:Destroy() end
-	
-	
 end
 return table.freeze(Service)

@@ -7,9 +7,10 @@ local UserInputService=game:GetService("UserInputService")
 local Scope=require(game.ReplicatedStorage.Game.Shared.Utilities.CleanupScope)
 local HeldView=require(game.ReplicatedStorage.Game.Shared.Utilities.HeldView)
 local Reveal=require(game.ReplicatedStorage.Game.Shared.Utilities.HudReveal)
+local Work=require(game.ReplicatedStorage.Game.Shared.Utilities.WorkInput) -- (R43) crank, lever and pump input
 local Controller={};Controller.__index=Controller
 function Controller.new(player,gui)
-	return setmetatable({Name="InteractionController",Dependencies={"StateController","InputController"},_player=player,_gui=gui,_targets={}},Controller)
+	return setmetatable({Name="InteractionController",Dependencies={"StateController","InputController"},_player=player,_gui=gui,_targets={},_work={}},Controller)
 end
 function Controller:Init(deps)
 	self._state=deps.StateController;self._input=deps.InputController;self._scope=Scope.new()
@@ -70,15 +71,17 @@ function Controller:_PaperCard(target,dt,progress)
 	local outline=card:FindFirstChild("Outline")
 	if outline then local h=(progress or 0)>0 and 1 or 0;outline.Color=CARD_CREAM:Lerp(CARD_AMBER,h);outline.Transparency=.62-.3*h end
 end
-function Controller:_Send(action,id,epoch)
+function Controller:_Send(action,id,epoch,work)
 	epoch=epoch or self._player:GetAttribute("EHCharacterEpoch")
 	if type(epoch)~="number" or epoch<1 then return false end
 	local payload={characterEpoch=epoch};if id then payload.interactionId=id end
+	if work~=nil then payload.work=math.clamp(work,0,20) end
 	return self._state:SendAction(action,payload)
 end
 function Controller:_Cancel()
 	if self._localHold and self._localHold.target:GetAttribute("EHKeycardReader") then pcall(function()require(game.ReplicatedStorage.Game.Shared.Utilities.KeycardSwipe).Cancel()end) end
 	self._localHold=nil
+	self:_EndWork()
 	-- let go with the bar (all but) full: the server counts that as finished, so the bar stays full
 	-- and closes with the completion instead of vanishing as if the job had been abandoned
 	local finished=self._holding~=nil and (self._progress or 0)>=.95
@@ -89,6 +92,13 @@ function Controller:_Cancel()
 	end
 	-- let go early: the bar is gone this frame, without waiting for the server to confirm
 	self._released=true;self:_HideProgress()
+end
+-- (R43) work modes: input capture for cranks, levers and pumps lives in Utilities.WorkInput
+function Controller:_BeginWork(target,mode)
+	if mode=="Crank" or mode=="Lever" or mode=="Pump" then Work.Begin(self,target,mode) end
+end
+function Controller:_EndWork()
+	if self._work.mode then Work.End(self) end
 end
 function Controller:_HideProgress()
 	self._progress=0;self._progressHold=0;self._progressId=nil;self._wasHolding=false
@@ -221,7 +231,7 @@ function Controller:_Render()
 	self._input:SetAvailable("Interact",self._target~=nil)
 	local state=p:GetAttribute("EHInteractionState")
 	-- after you let go the server may still say Holding for a moment; the bar ignores that
-	local holding=state=="Holding" and not self._released
+	local holding=(state=="Holding" or state=="Waiting") and not self._released
 	-- A local hold (the surface gate: EHLocalHold names the remote to fire when it completes). The
 	-- bar fills on this screen; letting go, looking away or walking off cancels it.
 	local lh=self._localHold
@@ -250,9 +260,15 @@ function Controller:_Render()
 		local id=tostring(p:GetAttribute("EHActiveInteraction"))..tostring(started)
 		local target=math.clamp((workspace:GetServerTimeNow()-started)/duration,0,1)
 		if self._progressId~=id then self._progressId=id;self._progress=target end
-		local predicted=self._progress+dt/duration
-		predicted+=(target-predicted)*(1-math.exp(-dt*5))
-		self._progress=math.clamp(math.max(predicted,self._progress),0,1)
+		if self._work.mode and self._work.target then
+			-- work modes: the bar follows the job's own progress (it can fall back: a pump drains)
+			local w=Work.Shown(self)
+			self._progress+=(w-self._progress)*(1-math.exp(-dt*12))
+		else
+			local predicted=self._progress+dt/duration
+			predicted+=(target-predicted)*(1-math.exp(-dt*5))
+			self._progress=math.clamp(math.max(predicted,self._progress),0,1)
+		end
 		-- picking something up: it goes into your hand the instant the bar is full, on this screen,
 		-- without waiting for the server's answer to come back (EquipmentController shows it)
 		local h=self._holding
@@ -291,6 +307,7 @@ function Controller:_Render()
 	if paper then self._bar.BackgroundTransparency=1;self._fill.BackgroundTransparency=1 end
 	if self._target then
   local action=self._target:GetAttribute('EHInteractionLabel')or 'Use'
+  if state=="Waiting" and not self._released then action='WAITING FOR CREW' else action=Work.Hint(self,self._target,action) end
   -- one zone, one prompt: the mop station reads RETURN MOP while you are carrying a mop
   local withMop=self._target:GetAttribute('EHLabelWithMop')
   if withMop and p:GetAttribute('EHCarryingMop') then action=withMop end
@@ -381,9 +398,21 @@ function Controller:Start()
 			if KS then KS.Begin(self._target) end
 		elseif state=="Begin" and self._target then
 			local id=self._target:GetAttribute("EHInteractionId");local epoch=self._player:GetAttribute("EHCharacterEpoch")
+			local mode=self._target:GetAttribute("EHInteractionMode") or "Hold"
+			-- (R43) a pump stroke on the pump you are already working: one tap, no new hold
+			if mode=="Pump" and self._holding and self._holding.id==id then
+				self._work.lastTap=os.clock();self:_Send("ContinueInteraction",id,epoch,1);Work.Pulse(self);return
+			end
 			self._progressBase=self._target:GetAttribute("EHProgressBase") or 0
-			if self:_Send("BeginInteraction",id,epoch) then self._holding={id=id,epoch=epoch};self._elapsed=0;self._released=false;self._progressHold=0 end
-		elseif state=="End" or state=="Cancel" then self:_Cancel() end
+			if self:_Send("BeginInteraction",id,epoch) then
+				self._holding={id=id,epoch=epoch,mode=mode};self._elapsed=0;self._released=false;self._progressHold=0
+				self:_BeginWork(self._target,mode)
+				if mode=="Pump" then self._work.lastTap=os.clock();self:_Send("ContinueInteraction",id,epoch,1);Work.Pulse(self) end
+			end
+		elseif state=="End" or state=="Cancel" then
+			-- a pump keeps going between taps (it lapses on its own when the beat stops)
+			if not (self._holding and self._holding.mode=="Pump" and state=="End") then self:_Cancel() end
+		end
 	end))
 	self._scope:Add(self._input:Register("DropObjectiveItem",function(state)
 		if state=="Begin" then
@@ -414,7 +443,7 @@ function Controller:Start()
 	end))
 	self._scope:Add(self._player:GetAttributeChangedSignal("EHInteractionSerial"):Connect(function()
 		local state=self._player:GetAttribute("EHInteractionState")
-		if state=="Completed" or state=="Rejected" or state=="Canceled" then self._holding=nil end
+		if state=="Completed" or state=="Rejected" or state=="Canceled" then self._holding=nil;self:_EndWork() end
 		-- a finished job: the bar runs to full and closes (whether or not the key is still held)
 		if state=="Completed" then self._released=false;self._progress=math.max(self._progress or 0,.98);self._progressHold=math.max(self._progressHold or 0,.18);self._wasHolding=false end
 		if state=="Canceled" or state=="Rejected" then if (self._progressHold or 0)>0 and not self._localHold then self:_HideProgress() end end
@@ -427,7 +456,8 @@ function Controller:Start()
 	end))
 	self._scope:Add(RunService.Heartbeat:Connect(function(dt)
 		self._elapsed=(self._elapsed or 0)+dt
-		if self._holding and self._elapsed>=.5 then self._elapsed=0;self:_Send("ContinueInteraction",self._holding.id,self._holding.epoch) end
+		if self._holding and self._work.mode then Work.Step(self,dt)
+		elseif self._holding and self._elapsed>=.5 then self._elapsed=0;self:_Send("ContinueInteraction",self._holding.id,self._holding.epoch) end
 		self._renderElapsed=(self._renderElapsed or 0)+dt
 		-- every frame: a prompt appears the instant you look at something (no delay, no fade)
 		self._renderElapsed=0;self:_Render()
