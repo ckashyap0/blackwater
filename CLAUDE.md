@@ -76,6 +76,13 @@ Paths are the same in both places unless marked.
 - Tests: `ElevatorDebug` takes `L3:Stage=<name>`, `L3:Sent`, `L3:Turn`, `L3:Snuff`, `L3:Reveal`, `L3:State`. Dev checks: `Development.Level3Checks`.
 - Script push without Rojo: build a StringValue model with `rojo build`, PATCH it onto asset 121124607480216, `insert_asset`, copy `Value` to `Source` after a checksum match.
 
+### Set pieces (R43, shared by every floor)
+- Job modes on `InteractionService` defs (`mode`): `Hold` (default), `Crank` (circle the mouse, stick or finger; `work` = turns), `Lever` (pull down), `Pump` (tap in a beat; `decay` drains it, `sustain` never completes, so a floor can read it as a level), `Sync` (needs `syncGroup`; the crew completes together). The server caps effort at `maxRate`, and `rate(player)` = 0 stalls a job. Progress goes on the target as `EHWorkProgress`. Floors read and set it with `context.GetInteractionProgress` / `SetInteractionProgress`. A target with `SpinRef` / `LeverRef` (a Ref name) moves that part with progress.
+- Camera cuts: `Utilities.Cinematic.Play(floorModel, id)` on the server. Shots are in `Config.Cinematics[EncounterId]`, and markers are invisible parts with a `Ref` (Level 3 keeps them in `12_Cameras`). The UI is `StarterGui.Cinematic`. A cut sets `EHCinematic`, which locks input and hides the HUD.
+- Beats: `Floors.BeatRunner` (when = stage / after+delay / zone / attr / manual). It stamps `Beat_<name>`, and the clients play `Config.<EncounterId>.Beats[name]` effects (Lights, Burst, Beacons, Shake, Sound, Show/Hide; `keep=true` re-applies for late joiners).
+- Flood: a Folder tagged `BWRisingWater` with `Surface*` parts, a `Volume`, and attributes `Stages`, `FailRise`, `Drain`, `Slow` (`Floors.RisingWater`). Lamps tagged `BWLamp` go out under the surface. `Floors.PushBack.Run(players, checkpointPart)` fades the crew out and moves them to a checkpoint. Nobody is hurt.
+- Effects: `Utilities.SetPieceFX`. Particle textures come from `Config.FX` (Blender sprites, still empty: they fall back to the engine's own).
+
 ### Floors and storage
 - Edit floors in `Workspace.BlackwaterAuthoring`.
 - `EnvironmentService` parks floors into `ServerStorage.GameAssets.FloorTemplates` at play time.
