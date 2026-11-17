@@ -57,13 +57,13 @@ M.Sets = {
 	-- (R41) Level 3, at the bypass key hook: cold. He faces the wall and does not turn (model attribute NoTurn),
 	-- and his portrait is not shown for these sets (M.NoPortrait). No names, no warmth. Every line is true.
 	L31 = {
-		{who = 'him', text = "The bypass wheel is down the hatch at the far end of the pipe gallery."},
-		{who = 'him', text = "One of you takes the key down, because the hatch holds one."},
-		{who = 'you', text = "And the rest of us?"},
-		{who = 'him', text = "The rest hold header pressure at the console, or the wheel won't turn."},
+		{who = 'him', text = "The wheel's down the hatch, end of the pipe gallery."},
+		{who = 'him', text = "Hatch only fits one, so pick who goes."},
+		{who = 'you', text = "What about the rest of us?"},
+		{who = 'him', text = "You stay on the header console, or that wheel won't turn."},
 	},
 	L32 = {
-		{who = 'him', text = "One goes down."},
+		{who = 'him', text = "Just one."},
 	},
 	-- (Nov 13) your own line once the main gate has shut behind you: he was standing just inside it a moment ago
 	Gone = {
