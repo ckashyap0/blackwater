@@ -3,7 +3,7 @@
 ## Project
 - Roblox co-op horror game for 1 to 4 players, audience 13+. New hires ride an elevator into a failing water treatment works.
 - Two places: Lobby "BlackWater" (97536935253958) and "Game" (96605018559143). Studio runs in Team Create, so a collaborator may be live.
-- Flow: Lobby, surface yard, intro lift ride, then floors 5 down to 1. Floors 3 to 1 are placeholders.
+- Flow: Lobby, surface yard, intro lift ride, then floors 5 down to 1. Floor 3 (Filtration) was built in R41. Floors 2 and 1 are placeholders.
 - Authoring lives in `Workspace.BlackwaterAuthoring`: SurfaceYard, Elevator, ShaftLink, Level5 to Level1.
 - Read `Project/Working Rules.md` and `Gotchas.md` in the vault for depth. This file wins on conflicts.
 
@@ -28,7 +28,7 @@ Paths are the same in both places unless marked.
 - `Bootstrap`: starts services in dependency order.
 - `Services`: one module per service, dependency-injected.
 - `Data`: models and state machines.
-- `Floors` (Game only): `Level5Floor`, `Level4Floor`, `SlipHazards`, `TemporaryFloor`.
+- `Floors` (Game only): `Level5Floor`, `Level4Floor`, `Level3Floor`, `BlackWaterReach`, `SlipHazards`, `TemporaryFloor`.
 - `Development`: Studio-only checks. They run only if `workspace:GetAttribute("RunDevChecks") == true`.
 - `ElevatorService` (Game) routes floors and rides.
 - Lobby-only services: `AdminService`, `CoinService`, `LobbyFeatureService`.
@@ -63,6 +63,18 @@ Paths are the same in both places unless marked.
 - `Utilities.GateCut`: 3.1 s cut to Level 5's ReturnGate for everyone when it opens. `Utilities.MobilePerf`: Floor 4 on touch devices (minor light shadows off, half particles).
 - Script sync without Rojo or clicks: build an rbxm of StringValues with `rojo build` (txt files), upload with Open Cloud, `insert_asset`, copy Sources with hash checks. Open Cloud refuses rbxmx and cannot archive models.
 - R37 z-fight pass: 974 block parts nudged up to 0.048 studs (attribute `R37ZFixFrom` = original CFrame). Floor 4: 297 meshes Precise->Automatic (`R37WasPrecise`), 1866 small parts no shadow (`R37NoShadow`).
+
+### Floor 3: Filtration (R41)
+- Design guide: vault `Floors/Floor 3.md`. Authoring model `BlackwaterAuthoring.Level3`, built 300 studs below its in-game position (`AuthoringOffset 0,-300,0`). Old placeholder: `ServerStorage.BackupR41`.
+- Stages `Fumes, Dosing, Inlets, Bypass, Lift` in `Floors.Level3Floor` + `Config.Level3`. `ElevatorService` picks the floor script by `EncounterId` (`Level3`).
+- Black water: `Floors.BlackWaterReach`. Each reach is a Folder tagged `BlackWaterReach` under `Level3.07_BlackWater` with a `Points` attribute (in-game coordinates) and `Seg<n>` film parts. It creeps toward lit flashlights and puts them out (`EHLightSnuffAt`, then `EHLightBlocked`, which `EquipmentService` obeys). `CharacterService:DrainStamina` serves fumes and film.
+- Split-up: the bypass key carrier is the sent player (`EHL3Sent`, floor `SentUserId`). Only they can use the hatch (`EHL3InChamber`). The wheel needs header pressure of 60 or more. A solo player latches the header.
+- Client: `Controllers.FiltrationController` (film, bed water, fumes, haze, HUD, ladder fade, knocks, monitor), `Utilities.RadioLine` (intercom box, `EHRadio*` player attributes), `Utilities.KnockSignal`, `Utilities.MartyGrey` (booth sequence from `GreyFaceAt`, rig `ReplicatedStorage.MartyStages.GreyRig`).
+- Authored UI: `StarterGui.RadioLine`, `StarterGui.FiltrationHud`. A UIStroke does not follow `GroupTransparency`: fade the stroke with the panel.
+- Marty on Floor 3: one model `Level3.MartyMarkers.Marty` (`TalkSets=L3`, `NoTurn=true`), moved by `Level3Floor` between `MartyMarker_L3CrossWalk` and `MartyMarker_L3KeyHook` only while unseen. Talk sets `L31`/`L32` hide his portrait (`MartyTalk.NoPortrait`).
+- Art: `MaterialService.BW3` (16 variants), kit `ServerStorage.BW3_Kit` (29 props, pivot at each prop's origin). Blender scripts: vault `Art Pipeline/scripts/bw3_textures.py`, `bw3_kit.py`. Exports in `Downloads\BlackWaterModels\BW3` (an approved Open Cloud upload folder).
+- Tests: `ElevatorDebug` takes `L3:Stage=<name>`, `L3:Sent`, `L3:Turn`, `L3:Snuff`, `L3:Reveal`, `L3:State`. Dev checks: `Development.Level3Checks`.
+- Script push without Rojo: build a StringValue model with `rojo build`, PATCH it onto asset 121124607480216, `insert_asset`, copy `Value` to `Source` after a checksum match.
 
 ### Floors and storage
 - Edit floors in `Workspace.BlackwaterAuthoring`.
