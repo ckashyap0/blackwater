@@ -421,6 +421,14 @@ function Controller:_View(dt,camera,b)
  fill.CFrame=camera.CFrame*CFrame.new(V(.32,-.28,-.25)*HeldMotion.Near)
  fill.Fill.Range=b.bounce.Range*HeldMotion.Near*1.15;fill.Fill.Brightness=b.bounce.Brightness*2.4;fill.Fill.Enabled=lit
  -- (Oct 23: a narrower, gentler torch - a beam, not a floodlight)
+ -- (R41) Level 3: black water puts the beam out (EHLightSnuffAt, BlackWaterReach): it sags, stutters twice and dies
+ do
+  local at=self._player:GetAttribute('EHLightSnuffAt')
+  if type(at)=='number' then
+   local u=(workspace:GetServerTimeNow()-at)/.8
+   if u>=0 and u<1.5 then k*=u<1 and (.3+.7*(1-u))*((math.sin(u*29)>.15) and 1 or .2) or 0 end
+  end
+ end
  b.light.Brightness=2.6*k;b.bounce.Brightness=.45*k
  local spill=b.part:FindFirstChild('Spill')
  if spill then spill.Enabled=lit;spill.Color=b.light.Color;spill.Brightness=.12*k end

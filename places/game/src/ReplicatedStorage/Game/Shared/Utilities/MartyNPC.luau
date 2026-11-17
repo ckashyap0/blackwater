@@ -113,6 +113,9 @@ function M.Start()
 			local near = root and (root.Position - s.mesh.Position).Magnitude < 25
 			if talk and root and near then s.holdUntil = now + 1.5 end
 			local engaged = root and near and now < s.holdUntil
+			-- (R41) Level 3: he is cold. With NoTurn on the model he never turns to anyone (body or head).
+			local noTurn = model:GetAttribute('NoTurn') == true
+			if noTurn then engaged = false end
 			if engaged then
 				local d = root.Position - s.mesh.Position
 				if Vector3.new(d.X, 0, d.Z).Magnitude > .5 then targetYaw = yawOf(Vector3.new(d.X, 0, d.Z)) end
@@ -132,7 +135,7 @@ function M.Start()
 			s.yaw = wrap(s.yaw)
 			local headGoal = engaged and math.clamp(wrap(targetYaw - s.yaw), math.rad(-60), math.rad(60)) or 0
 			-- (R37) not talking, but you are close: only his head follows you (his body stays where it is)
-			if not engaged and root then
+			if not engaged and root and not noTurn then
 				local d = root.Position - s.mesh.Position
 				local flat = Vector3.new(d.X, 0, d.Z)
 				if flat.Magnitude < 12 and flat.Magnitude > .5 then

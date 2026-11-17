@@ -7,6 +7,7 @@ local Templates=require(game.ServerStorage.GameAssets.FloorRegistry)
 local TemporaryFloor=require(script.Parent.Parent.Floors.TemporaryFloor)
 local Level5Floor=require(script.Parent.Parent.Floors.Level5Floor)
 local Level4Floor=require(script.Parent.Parent.Floors.Level4Floor)
+local Level3Floor=require(script.Parent.Parent.Floors.Level3Floor)
 local Intro=require(game.ReplicatedStorage.Game.Shared.Utilities.IntroTimeline)
 local Slots=require(game.ReplicatedStorage.Game.Shared.Utilities.CabinSlots)
 local Level5Config=require(game.ReplicatedStorage.Game.Shared.Config.Level5)
@@ -355,6 +356,7 @@ function Service:_Load(snapshot)
 			SetStatus=function(message)self:_State(self.State,message)end,
 			RestoreCabinSupply=function()self:_CabinSupply(true)end,
 			SetSpeedModifier=function(player,key,value)return self._characters:SetSpeedModifier(player,key,value)end,
+			DrainStamina=function(player,amount)return self._characters:DrainStamina(player,amount)end, -- (R41) fumes and black water on Level 3
 			IsSuspended=function()return self._survival:IsEncounterSuspended()end,
 			RegisterInteraction=function(def)
 				def=table.clone(def);def.runId=snapshot.runId;def.floorInstanceId=id;scope:Add(self._interactions:Register(def))
@@ -384,7 +386,7 @@ function Service:_Load(snapshot)
 				return result.ok,result.code
 			end}
 		local encounter=model:GetAttribute("EncounterId")
-		local implementation=encounter=="Level5" and Level5Floor or encounter=="Level4" and Level4Floor or TemporaryFloor
+		local implementation=encounter=="Level5" and Level5Floor or encounter=="Level4" and Level4Floor or encounter=="Level3" and Level3Floor or TemporaryFloor
 		local tp=os.clock()
 		 floor=implementation.new(model,snapshot.currentFloorNumber);floor:Prepare(context)
 		mark("floor:Prepare ("..tostring(encounter)..")",tp)
@@ -430,6 +432,8 @@ function Service:_Seal()
 	local ride=(leaving==5) and 8 or 5
 	self._travel=ride;self._attempts=0;self._retry=0
 	self._cabin:SetAttribute("TravelFromFloor",leaving)
+	-- (R41) leaving Level 3: three knocks on the cabin roof, a pause, three more (Utilities.KnockSignal)
+	if leaving==3 then self._cabin:SetAttribute("RoofKnockAt",workspace:GetServerTimeNow()+1.6) end
 	self._cabin:SetAttribute("TravelStartedAt",workspace:GetServerTimeNow());self._cabin:SetAttribute("TravelSeconds",ride)
 	local motor=self._cabin:FindFirstChild("DescentMotor",true);if motor then motor.PlaybackSpeed=1;motor:Play()end
 	self:_ApplyAdminTarget()
@@ -1179,6 +1183,10 @@ function Service:_Debug(cmd)
 		if not self._yard or not self._boarding then return "NoYard" end
 		if not self._yard:GetAttribute("CheckedInAt") then self._yard:SetAttribute("CheckedInAt",workspace:GetServerTimeNow()) end
 		self:_AllIntoCar();return "GateDriveAt "..tostring(self._yard:GetAttribute("GateDriveAt"))
+	elseif type(cmd)=="string" and string.sub(cmd,1,3)=="L3:" then
+		-- (R41) Level 3 test shortcuts (Level3Floor:Debug): "L3:Stage=Bypass", "L3:Sent", "L3:Turn", "L3:Snuff", "L3:Reveal", "L3:State"
+		local f=self._floor;if not f or not f.Debug then return "NoLevel3" end
+		return f:Debug(string.sub(cmd,4))
 	elseif cmd=="Hurt" then
 		-- a lethal Attack on the first player: Extra Life, downed, revive and wipe can be tested before a floor can hurt anyone
 		local p=self._players:GetPlayers()[1];if not p then return "NoPlayer" end

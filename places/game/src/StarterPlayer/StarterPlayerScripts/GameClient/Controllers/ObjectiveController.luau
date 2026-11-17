@@ -334,7 +334,7 @@ function Controller:_HideOutlines()
 end
 function Controller:_Update()
  local runtime=workspace:FindFirstChild('Runtime');local env=runtime and runtime:FindFirstChild('DescentEnvironment');local floor
- if env then for _,m in env:GetChildren()do local e=m:GetAttribute('EncounterId');if (e=='Level5' or e=='Level4') and m:GetAttribute('TaskActive')then floor=m;break end end end
+ if env then for _,m in env:GetChildren()do local e=m:GetAttribute('EncounterId');if (e=='Level5' or e=='Level4' or e=='Level3') and m:GetAttribute('TaskActive')then floor=m;break end end end
  local src=(not floor) and Sources.Current(self._player) or nil -- (no floor task: a registered source, e.g. the surface keycard)
  if src then floor=src.key end
  local active=(src and not self._player:GetAttribute('EHCinematic') or self._input:GetContext()=='ActiveFloor') and not self._menu and not self._player:GetAttribute('EHLoreOpen') and floor~=nil
@@ -351,6 +351,8 @@ function Controller:_Update()
  -- (Nov 13) the same short grace as the bar: a brief gap never blinks the outlines off and on again
  if not active then if not shown then self:_HideOutlines() end;return end
  local message=src and src.text or floor:GetAttribute('TaskText')or ''
+ -- (R41) Level 3 split-up: the crew member sent down the hatch reads their own line
+ if not src and self._player:GetAttribute('EHL3Sent') then message=floor:GetAttribute('TaskTextSent') or message end
  local names={}
  for name in string.gmatch(floor:GetAttribute('TaskTargets')or floor:GetAttribute('TaskTarget')or '','[^,]+')do table.insert(names,name)end
  local targets={}

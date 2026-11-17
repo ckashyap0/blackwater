@@ -39,7 +39,8 @@ function M.Start()
 			local env = runtime and runtime:FindFirstChild('DescentEnvironment')
 			if env then
 				for _, m in env:GetChildren() do
-					if m:GetAttribute('EncounterId') == 'Level4' then task.spawn(lighten, m) end
+					local e = m:GetAttribute('EncounterId')
+					if e == 'Level4' or e == 'Level3' then task.spawn(lighten, m) end
 				end
 			end
 			task.wait(2)

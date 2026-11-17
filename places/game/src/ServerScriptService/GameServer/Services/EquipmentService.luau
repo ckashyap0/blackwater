@@ -10,6 +10,8 @@ end
 function Service:_Allowed(player)
 	local context=player:GetAttribute("EHContext")
 	if player:GetAttribute("EHLifeState")~="Alive" or (context~="ActiveFloor" and context~="Transit") then return false end
+	-- (R41) Level 3: black water put this light out (BlackWaterReach sets and clears EHLightBlocked on the server)
+	if player:GetAttribute("EHLightBlocked") then return false end
 	-- (the surface yard is at night now: the torch works up there too)
 	local view=self._runs:GetViewFor(player.UserId);if not view then return false end
 	for _,scope in self._restrictions do if scope==view.floorInstanceId then return false end end
@@ -18,6 +20,8 @@ end
 function Service:_Update(player)
 	local r=self._players[player];if not r then return end
 	local allowed=self:_Allowed(player)
+	-- (R41) a snuffed light stays off until its owner switches it on again
+	if player:GetAttribute("EHLightBlocked") then r.desired=false end
 	-- Sprinting automatically stows the light (off + put away); stopping brings it back out
 	-- and on again. The player's own on/off choice (desired) is never changed by sprinting.
 	local stowed=player:GetAttribute("EHSprinting")==true

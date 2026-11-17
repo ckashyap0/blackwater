@@ -226,6 +226,14 @@ function Service:SetSpeedModifier(player,key,value)
 	if value~=nil and r.modifiers[key]==nil then local n=0 for _ in r.modifiers do n+=1 end if n>=8 then return false end end
 	r.modifiers[key]=value;return true
 end
+-- (R41) take stamina away (Level 3 fumes and black water): never below zero, never damage
+function Service:DrainStamina(player,amount)
+	local r=self._records[player]
+	if not r or type(amount)~="number" or amount<=0 then return false end
+	r.sprint.stamina=math.max(0,r.sprint.stamina-amount)
+	if r.sprint.stamina<=0 then r.sprint.exhausted=true;r.sprint.sprinting=false end
+	self:_Publish(player,r);return true
+end
 function Service:_Step(dt)
 	for player,r in self._records do
 		local h,root=r.humanoid,r.root

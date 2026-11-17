@@ -54,12 +54,24 @@ M.Sets = {
 	L52 = {
 		{who = 'him', text = "Everything alright? Holler if you need me."},
 	},
+	-- (R41) Level 3, at the bypass key hook: cold. He faces the wall and does not turn (model attribute NoTurn),
+	-- and his portrait is not shown for these sets (M.NoPortrait). No names, no warmth. Every line is true.
+	L31 = {
+		{who = 'him', text = "The bypass wheel is down the hatch at the far end of the pipe gallery."},
+		{who = 'him', text = "One of you takes the key down, because the hatch holds one."},
+		{who = 'you', text = "And the rest of us?"},
+		{who = 'him', text = "The rest hold header pressure at the console, or the wheel won't turn."},
+	},
+	L32 = {
+		{who = 'him', text = "One goes down."},
+	},
 	-- (Nov 13) your own line once the main gate has shut behind you: he was standing just inside it a moment ago
 	Gone = {
 		{who = 'you', text = "Wow, he's already gone. That's weird."},
 	},
 }
 M.Speakers = {him = 'Marty', you = '{name}'}
+M.NoPortrait = {L31 = true, L32 = true} -- (R41) sets where Marty's face is never shown
 M.CharsPerSecond = 32
 M.NameChars = 10
 M.Hold = 1.1
@@ -259,8 +271,9 @@ function M.Start()
 			line.Text = (string.gsub(l.text, '{name}', player.Name))
 			task.spawn(Fit.Fit, box, line, line.Text, baseH, baseTS, 54) -- (54 = the box's 22 px inset + the 32 px speaker row above the line)
 			speaker.Text = (string.gsub(M.Speakers[l.who] or '', '{name}', player.Name))
-			if l.who == 'him' then buildMarty() end
-			face.Visible = l.who == 'you'; npcView.Visible = l.who == 'him'
+			local hideHim = M.NoPortrait[set] == true
+			if l.who == 'him' and not hideHim then buildMarty() end
+			face.Visible = l.who == 'you'; npcView.Visible = l.who == 'him' and not hideHim
 		end
 		local n = utf8.len(line.ContentText) or #line.Text
 		fitStep()

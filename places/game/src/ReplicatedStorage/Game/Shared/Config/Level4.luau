@@ -28,13 +28,14 @@ return Freeze({
  -- RADIO CALLS (scaffolding kept for a later pass). The calls still fire on the server and the
  -- radios still squelch and murmur in the world; the on-screen subtitle box is OFF for now (owner
  -- R26: it made things worse). Flip ShowRadioSubtitles back to true to bring the UI back.
- ShowRadioSubtitles=false,
+ -- (R41, owner Nov 16: subtitles back on)
+ ShowRadioSubtitles=true,
  -- what comes over the radios and the PA (who: 'Marty' calm/creepy, 'Mercer' a faint warning)
  Radio={
   Arrival={who='Marty',style='calm',delay=10,text="Hello? ...This is Marty. You made it to Level Four. Good. The control room's a mess. Fix it up, then keep going down. I'll be waiting."},
-  DoorOpen={who='Marty',style='calm',text="Nice work. Oh, and don't read anything in the server room, okay? Old files. Mostly lies."},
-  Tuned={who='Marty',style='creepy',text="There you are. You found my channel... You trust me, right? Everybody trusts Marty."},
-  RebootHalf={who='Marty',style='glitch',text="Why are you turning it back ON? ...Leave it dark. It's nicer in the dark."},
+  DoorOpen={who='Marty',style='calm',text="Nice work. The server room's full of old files. They should have cleared those out years ago."},
+  Tuned={who='Marty',style='creepy',text="There you are. You found my channel... Keep it tuned here. It's easier when you can hear me."},
+  RebootHalf={who='Marty',style='glitch',text="There it goes... Don't stop now. Stay close until it's all the way back on."},
   RebootDone={who='Marty',style='creepy',text="...Fine. Come down, then. I'm always one floor down."},
   Ambient={
    {who='Mercer',style='faint',text="...if you can hear this... don't answer him..."},
