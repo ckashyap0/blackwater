@@ -29,6 +29,24 @@ local function hold(on)
 		pcall(function() RunService:UnbindFromRenderStep('BlackwaterTouchHold') end)
 	end
 end
+-- true on a phone / tablet (the touch thumbstick and jump button are on screen)
+function M.IsTouch() return touch() end
+-- Roblox hides the touch JUMP button whenever jumping is switched off (JumpHeight/JumpPower 0, or the Jumping
+-- state disabled). Code that wants 'no jumping' on a touch screen calls NoJump(key,true): the button stays and
+-- every jump press is simply swallowed each frame; NoJump(key,false) gives jumping back.
+local noJump = {}
+function M.NoJump(key, on)
+	noJump[key] = on or nil
+	if next(noJump) then
+		RunService:BindToRenderStep('BlackwaterTouchNoJump', Enum.RenderPriority.Input.Value + 2, function()
+			local c = Players.LocalPlayer.Character
+			local h = c and c:FindFirstChildOfClass('Humanoid')
+			if h and h.Jump then h.Jump = false end
+		end)
+	else
+		pcall(function() RunService:UnbindFromRenderStep('BlackwaterTouchNoJump') end)
+	end
+end
 function M.Install()
 	if installed or not RunService:IsClient() then return end
 	local player = Players.LocalPlayer

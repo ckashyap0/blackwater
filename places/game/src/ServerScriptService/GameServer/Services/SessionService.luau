@@ -81,8 +81,10 @@ function Service:IsReady(p)return not self._required or self._admitted[p]==true 
 -- friend through Roblox's own "Join" lands outside the crew's reserved server, and a run that
 -- has already ended cannot be re-entered. Instead of a hard kick they are sent back to the lobby,
 -- which tells them why. (Only if that teleport cannot even start are they disconnected.)
+local LOAD_GRACE=90
 local NOT_YOUR_DESCENT="This game is only for its crew. Join your friend's lift in the lobby to play together."
-function Service:_Reject(p)
+function Service:_Reject(p,why)
+	warn("[ElevatorHorror] Returning "..p.Name.." to the lobby: "..tostring(why or "?")) -- (Nov 16) every send-back is logged
 	self._joining[p]=nil;self._admitted[p]=nil
 	p:SetAttribute("EHSessionAdmitted",false)
 	if p.Parent~=self._players then return end
@@ -113,7 +115,10 @@ end
 function Service:_Join(p)
 	if not self._required or self._joining[p] or self._admitted[p] then return end
 	if self._ended then self:_Reject(p);return end
-	self._joining[p]={deadline=self._clock()+20,loading=true}
+	-- (Nov 16, Ryan: 'something makes us return to the lobby') a player has LOAD_GRACE seconds after arriving to finish
+	-- loading (client ready, profile, character). It was 20 s, which a phone or a slow connection could miss on this
+	-- big place - and missing it sent you straight back to the lobby.
+	self._joining[p]={deadline=self._clock()+LOAD_GRACE,loading=true}
 	local ok,ticket=pcall(function()
 		local data=p:GetJoinData();local d=data.TeleportData
 		assert(data.SourceGameId==self._server.universe and data.SourcePlaceId==Places.LobbyPlaceId,"WrongSource")
@@ -123,7 +128,7 @@ function Service:_Join(p)
 		local claimed=assert(self._directory:Claim(d.sessionId,p.UserId,self._server.privateId,self._server.jobId))
 		return claimed
 	end)
-	if not self._active or not ok or p.Parent~=self._players then self:_Reject(p);return end
+	if not self._active or not ok or p.Parent~=self._players then self:_Reject(p,not ok and tostring(ticket) or "inactive");return end
 	if self._ticket and self._ticket.id~=ticket.id then self:_Reject(p);return end
 	self._ticket=ticket;self._removed[p.UserId]=nil
 	local run=self._runs:GetSnapshot();local participant=run and run.participants[tostring(p.UserId)]
@@ -153,7 +158,7 @@ function Service:_Join(p)
 	-- get moved out again (clipping through the lift walls/floor at the very start).
 	if not run and game.ReplicatedStorage.Game:GetAttribute("SurfacePending")==true then frame=nil end
 	local deadline=participant and participant.reconnectDeadline or ticket.members[tostring(p.UserId)].deadline
-	self._joining[p]={deadline=math.min(self._clock()+20,deadline or math.huge),life=life,advanced=advanced,frame=frame,
+	self._joining[p]={deadline=math.min(self._clock()+LOAD_GRACE,deadline or math.huge),life=life,advanced=advanced,frame=frame,
 		floor=run and run.currentFloorInstanceId,completed=run and #run.completedFloorNumbers or 0,
 		stamina=not advanced and previous and previous.stamina or nil}
 	self._characters:Admit(p,life,frame,self._joining[p].stamina)
@@ -206,7 +211,7 @@ end
 function Service:_Step()
 	local now=self._clock()
 	for p,j in self._joining do
-		if now>=j.deadline then self:_Reject(p)
+		if now>=j.deadline then self:_Reject(p,"took too long to load (ready="..tostring(self._ready[p])..")")
 		elseif not j.loading then
 			local run=self._runs:GetSnapshot()
 			if run then

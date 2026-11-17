@@ -8,6 +8,7 @@ local TemporaryFloor=require(script.Parent.Parent.Floors.TemporaryFloor)
 local Level5Floor=require(script.Parent.Parent.Floors.Level5Floor)
 local Level4Floor=require(script.Parent.Parent.Floors.Level4Floor)
 local Level3Floor=require(script.Parent.Parent.Floors.Level3Floor)
+local CoinStashes=require(script.Parent.Parent.Floors.CoinStashes) -- (Nov 16) hidden coin piles on Floors 5 and 4
 local Intro=require(game.ReplicatedStorage.Game.Shared.Utilities.IntroTimeline)
 local Slots=require(game.ReplicatedStorage.Game.Shared.Utilities.CabinSlots)
 local Level5Config=require(game.ReplicatedStorage.Game.Shared.Config.Level5)
@@ -389,6 +390,7 @@ function Service:_Load(snapshot)
 		local implementation=encounter=="Level5" and Level5Floor or encounter=="Level4" and Level4Floor or encounter=="Level3" and Level3Floor or TemporaryFloor
 		local tp=os.clock()
 		 floor=implementation.new(model,snapshot.currentFloorNumber);floor:Prepare(context)
+		if encounter=="Level5" or encounter=="Level4" then local okC,errC=pcall(CoinStashes.Place,model,context,self._coins,snapshot.currentFloorNumber);if not okC then warn("[ElevatorHorror] coin stashes: "..tostring(errC)) end end
 		mark("floor:Prepare ("..tostring(encounter)..")",tp)
 		self._floor=floor;self._floorId=id;self._floorScope=scope
 		self._closeUnregister=self._interactions:Register({interactionId="ElevatorClose",target=Refs.Find(self._cabin,"ControlPanel") or Refs.Get(self._cabin,"ControlLegend"),runId=snapshot.runId,floorInstanceId=id,
@@ -1043,8 +1045,25 @@ function Service:_EndBoarding()
 	self._cabin:SetAttribute("Boarding",nil);self._cabin:SetAttribute("ArrivalCar",nil);if self._players==Players then game.ReplicatedStorage.Game:SetAttribute("SurfaceBoarding",nil) end
 	if self._players==Players then game.ReplicatedStorage.Game:SetAttribute("SurfacePending",nil) end -- (test fixtures never touch it)
 end
-function Service:_CommitDescent()
+function Service:_CommitDescent(reason)
 	local b=self._boarding;if not b or b.closing or b.transition then return end
+	-- (Nov 16, Ryan: 'make sure this NEVER happens') the surface lift only goes down for two reasons: the whole
+	-- connected crew is standing in the cabin, or an owner used a test command. Anything else is refused, and every
+	-- descent is written to the server log (F9 > Server) and to ReplicatedStorage.Game "LastDescent", so if the
+	-- crew is ever taken down unexpectedly we can see exactly why.
+	reason=reason or "Unknown"
+	if reason=="AllAboard" then
+		local s=self._runs:GetSnapshot();local inside,total=0,0
+		if s then inside,total=self:_Aboard(s) end
+		if total==0 or inside<total then warn("[ElevatorHorror] Lift descent refused: crew not all aboard ("..inside.."/"..total..")");return end
+	elseif reason~="AdminTransfer" and reason~="StudioDebug" then
+		warn("[ElevatorHorror] Lift descent refused: "..tostring(reason));return
+	end
+	local where={}
+	for _,p in self._players:GetPlayers()do local r=p.Character and p.Character:FindFirstChild("HumanoidRootPart");table.insert(where,p.Name.."@"..(r and string.format("%.0f,%.0f,%.0f",r.Position.X,r.Position.Y,r.Position.Z) or "none")) end
+	local note=reason.." "..os.date("!%H:%M:%S").." "..table.concat(where,"; ")
+	print("[ElevatorHorror] Lift going down: "..note)
+	if self._players==Players then pcall(function()game.ReplicatedStorage.Game:SetAttribute("LastDescent",note)end) end
 	b.closing=true;self._cabin:SetAttribute("DescendAt",workspace:GetServerTimeNow())
 	self:_State("Closing","GOING DOWN")
 	-- the elevator sequence starts here: every crew member is fully locked (InputController reads
@@ -1131,14 +1150,14 @@ function Service:_Board(s,dt)
 		if not b.hasClosed then gateBusy=true
 		elseif ca and workspace:GetServerTimeNow()-ca<GATE_CLOSE_DELAY+GATE_CLOSE_SECONDS+1.2 then gateBusy=true end
 	end
-	if not b.closing and b.ready>=1.2 and not gateBusy then self:_CommitDescent() end
+	if not b.closing and b.ready>=1.2 and not gateBusy then self:_CommitDescent("AllAboard") end
 	-- a straggler can't hold the crew forever: two minutes after the first crew member steps into the
 	-- lift, the descent starts anyway. Nobody is moved here - the screens fade to black first and
 	-- anyone still outside is brought aboard behind the black (below), as part of the lift transition.
-	if inside>0 and not b.firstAboard then b.firstAboard=os.clock() end
-	if not b.closing and b.firstAboard and os.clock()-b.firstAboard>120 then
-		self:_CommitDescent()
-	end
+	-- (Nov 16, Ryan: 'it randomly teleported us to Floor 5' in a live server) REMOVED: two minutes after anyone
+	-- had ever stepped into the lift (even if they walked straight back out), the ride down used to start by
+	-- itself and pull everyone still outside into the cabin. The lift now ONLY goes down when every connected
+	-- crew member is standing inside it (above). Nobody is ever moved into the lift from elsewhere.
 	-- once the descent is committed the doors close no matter what (every screen is already fading out)
 	if b.closing then
 		self:_Doors(self._alpha-dt/2)
@@ -1168,7 +1187,7 @@ function Service:_Debug(cmd)
 		end
 	end
 	if cmd=="SkipIntro" then
-		if self._boarding and not self._boarding.transition then aboard();self:_CommitDescent();return "Boarding->Descent" end
+		if self._boarding and not self._boarding.transition then aboard();self:_CommitDescent("StudioDebug");return "Boarding->Descent" end
 		if s.phase=="Intro" then self._elapsed=math.max(self._elapsed,self._introSeconds-.5);return "IntroSkipped" end
 		return "Phase:"..s.phase
 	elseif cmd=="SkipFloor" then
@@ -1218,6 +1237,7 @@ end
 function Service:AdminTransfer(player,n)
 	if not self:_IsAdmin(player) then return false,"Not allowed." end
 	if type(n)~="number" or n~=math.floor(n) or n<1 or n>5 then return false,"Use a floor from 1 to 5, e.g. /floor transfer 4" end
+	print("[ElevatorHorror] /floor "..n.." used by "..player.Name) -- (Nov 16) every admin transfer is logged
 	local s=self._runs:GetSnapshot();if not s then return false,"No run is active." end
 	if finished[s.phase] then return false,"This run is over." end
 	local function aboard()
@@ -1227,7 +1247,7 @@ function Service:AdminTransfer(player,n)
 		end
 	end
 	if self._boarding and not self._boarding.transition then
-		self._adminTarget=n;aboard();self:_CommitDescent();return true,"Heading to floor "..n.."..."
+		self._adminTarget=n;aboard();self:_CommitDescent("AdminTransfer");return true,"Heading to floor "..n.."..."
 	end
 	if s.phase=="Intro" then
 		self._adminTarget=n;return true,"Heading to floor "..n.."..."
@@ -1263,9 +1283,11 @@ function Service:_AdminCommand()
 	-- (Nov 16) "/skip" for testing (Owner / Co-Owner only, like /floor): on the surface it puts the crew in the lift
 	-- and starts the ride down straight away (skips the drive, check-in, Marty and the walk); during the ride
 	-- down it jumps to the end, so you land on Level 5. "/floor <n>" then goes to any floor.
-	local skip=TCS:FindFirstChild("BlackwaterSkip")
-	if not skip then skip=Instance.new("TextChatCommand");skip.Name="BlackwaterSkip";skip.PrimaryAlias="/skip";skip.Parent=TCS;self._scope:Add(skip) end
-	self._scope:Add(skip.Triggered:Connect(function(source)
+	-- (Nov 16, Ryan: switched OFF for now - turn it back on only at the very end of the project)
+	local SKIP_COMMAND_ENABLED=false
+	local skip=SKIP_COMMAND_ENABLED and TCS:FindFirstChild("BlackwaterSkip")
+	if SKIP_COMMAND_ENABLED and not skip then skip=Instance.new("TextChatCommand");skip.Name="BlackwaterSkip";skip.PrimaryAlias="/skip";skip.Parent=TCS;self._scope:Add(skip) end
+	if SKIP_COMMAND_ENABLED then self._scope:Add(skip.Triggered:Connect(function(source)
 		local player=source and self._players:GetPlayerByUserId(source.UserId);if not player then return end
 		if not self:_IsAdmin(player) then return end
 		if os.clock()-(last[player] or 0)<2 then return end;last[player]=os.clock()
@@ -1278,7 +1300,7 @@ function Service:_AdminCommand()
 		else msg="! Nothing to skip here. Use /floor 1-5 to change floor." end
 		player:SetAttribute("EHAdminReply",msg)
 		player:SetAttribute("EHAdminReplySerial",(player:GetAttribute("EHAdminReplySerial") or 0)+1)
-	end))
+	end)) end
 end
 -- THE ARRIVAL DRIVE. Every client plays the same short cutscene from the yard's ArrivalCarAt
 -- (ArrivalDrive): two typed lines over black, the crew's car coming along the highway, turning

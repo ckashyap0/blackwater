@@ -38,8 +38,12 @@ local CRACKLE = 'rbxassetid://87751901232664' -- the lift's ElectricalFault crac
 
 -- timings (seconds)
 local OUT_T, HOLD_T = .55, 1.25
-local RETRACT = {{'A', 'B', .16}, {'B', 'C', .16}, {'C', 'D', .24}}
-local GONE_T = 1.0
+-- (Nov 16, Ryan: 'I ran fast enough and was able to see him') a quicker pull back, and the copy is removed the
+-- instant he is behind the wall (no lingering second); running up on him while he is out makes him pull back early
+local RETRACT = {{'A', 'B', .1}, {'B', 'C', .1}, {'C', 'D', .14}}
+local GONE_T = 0
+local RUSH = .7 -- (share of ViewMin) closer than this while he is out: he pulls back at once
+local EYE = .45 -- (Nov 16, Ryan: the glow was too much) how strong his eyes glow while he peeks (0-1)
 local FLICKS = {.22, .62, .98} -- grey flicks during the hold (from the end of the lean out)
 local FLICK_LEN = .085
 -- heartbeat: gaps between beats and their volume; fast and loud first, then fading out and slowing down
@@ -128,7 +132,7 @@ end
 local function grey(a, on)
 	if a.isGrey == on then return end
 	a.isGrey = on
-	Rig.Eyes(a, on and 0 or 1)
+	Rig.Eyes(a, on and 0 or EYE)
 end
 
 local function pointAt(a, which, bone, lift)
@@ -168,7 +172,7 @@ end
 
 local function tryPlace(marker, cam, root, char)
 	if otherMarty(marker) then return end -- (Nov 16) never two of him
-	local maxD = marker:GetAttribute('ViewMax') or 42
+	local maxD = marker:GetAttribute('ViewMax') or 60
 	local minD = marker:GetAttribute('ViewMin') or 15
 	local d = (root.Position - marker.Position).Magnitude
 	if d > maxD + 25 or d < minD then return end
@@ -195,25 +199,34 @@ local function step(a, cam, root, char, dt, now)
 	local d = (root.Position - marker.Position).Magnitude
 	if a.phase == 'hidden' then
 		local minD = marker:GetAttribute('ViewMin') or 15
-		local maxD = marker:GetAttribute('ViewMax') or 42
+		local maxD = marker:GetAttribute('ViewMax') or 60
 		if d < minD * .5 then finish(a) return end -- you got right up to the corner first: he was never seen
-		local seeCos = math.cos(math.rad(marker:GetAttribute('SeeDeg') or 22))
+		local seeCos = math.cos(math.rad(marker:GetAttribute('SeeDeg') or 30))
 		local vis, dot = sight(cam, a.peekHead, {char, a.model})
 		local bodyHidden = true
 		if vis and dot > seeCos then
 			for _, p in a.mustHide do if sight(cam, p, {char, a.model}) then bodyHidden = false break end end
 		end
 		if d >= minD and d <= maxD and vis and dot > seeCos and bodyHidden then a.seenFor += dt else a.seenFor = math.max(0, a.seenFor - dt) end
-		if a.seenFor > .25 then
+		if a.seenFor > .1 then -- (Nov 16) triggers sooner
 			a.phase = 'out'; a.t0 = now
 			oneShot(STING, .5, .95, 6)
 			heartbeat() -- (right on the first sound)
 			a.static = newSound(STATIC, 0, 1, true); a.static:Play()
 			a.crackle = nil
 		end
+	elseif a.phase == 'out' and d < (marker:GetAttribute('ViewMin') or 15) * RUSH then
+		-- still leaning out: he slides straight back the way he came
+		stopAudio(a); a.phase = 'back'; a.t0 = now; a.u0 = a.outU or 0
+	elseif a.phase == 'back' then
+		local u = math.max(0, (a.u0 or 0) * (1 - (now - a.t0) / .12))
+		pose(a, 'D', 'A', u); place(a, 1 - u); Rig.Eyes(a, u * EYE)
+		if u <= 0 then finish(a) return end
+	elseif a.phase == 'hold' and d < (marker:GetAttribute('ViewMin') or 15) * RUSH then
+		grey(a, false); stopAudio(a); a.phase = 'retract'; a.t0 = now; a.seg = 1
 	elseif a.phase == 'out' then
-		local u = smoother((now - a.t0) / OUT_T)
-		pose(a, 'D', 'A', u); place(a, 1 - u); Rig.Eyes(a, u)
+		local u = smoother((now - a.t0) / OUT_T); a.outU = u
+		pose(a, 'D', 'A', u); place(a, 1 - u); Rig.Eyes(a, u * EYE)
 		if a.static then a.static.Volume = .09 * u end
 		if u >= 1 then a.phase = 'hold'; a.t0 = now; a.flick = 1 end
 	elseif a.phase == 'hold' then
@@ -244,14 +257,14 @@ local function step(a, cam, root, char, dt, now)
 		local e = seg[2] == 'D' and smoother(u) or u * u * (3 - 2 * u)
 		pose(a, seg[1], seg[2], e)
 		if seg[2] == 'D' then place(a, e) end
-		if a.seg == 1 then Rig.Eyes(a, 1 - e) elseif a.seg == 2 then Rig.Eyes(a, 0) end
+		if a.seg == 1 then Rig.Eyes(a, (1 - e) * EYE) elseif a.seg == 2 then Rig.Eyes(a, 0) end
 		if a.static then a.static.Volume = .09 * (1 - (a.seg - 1 + u) / #RETRACT) end
 		if u >= 1 then
 			if a.seg < #RETRACT then a.seg += 1; a.t0 = now
 			else a.phase = 'gone'; a.t0 = now; stopAudio(a) end
 		end
 	elseif a.phase == 'gone' then
-		if now - a.t0 >= GONE_T then finish(a) end
+		finish(a) -- (Nov 16) gone the moment he is behind the wall
 	end
 end
 

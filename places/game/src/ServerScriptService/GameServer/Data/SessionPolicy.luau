@@ -4,7 +4,9 @@ function Policy.CanJoin(ticket,userId,privateId,jobId,now)
 	if type(ticket)~="table" or ticket.status=="Ended" or ticket.status=="Allocating" then return false,"SessionClosed" end
 	if ticket.privateId~=privateId or privateId=="" then return false,"WrongServer" end
 	if ticket.ownerJob and ticket.ownerJob~=jobId then return false,"WrongServerProcess" end
-	if now>ticket.heartbeat+60 then return false,"SessionUnavailable" end
+	-- (Nov 16) before the game server has taken the ticket, the crew has the whole arrival window to get there
+	if ticket.ownerJob and now>ticket.heartbeat+60 then return false,"SessionUnavailable" end
+	if not ticket.ownerJob and now>(ticket.createdAt or ticket.heartbeat)+150 then return false,"SessionUnavailable" end
 	local member=ticket.members[tostring(userId)]
 	if not member or (member.state~="Pending" and member.state~="Disconnected") then return false,"NotReserved" end
 	if now>=member.deadline then return false,"ReservationExpired" end

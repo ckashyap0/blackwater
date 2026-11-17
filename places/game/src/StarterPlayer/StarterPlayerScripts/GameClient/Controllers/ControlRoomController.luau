@@ -234,10 +234,10 @@ function Controller:_Mimic(f,s,now,state)
  for _,l in s.lines do l.BackgroundColor3=state.rebooted and Color3.fromRGB(60,200,255) or Color3.fromRGB(60,70,80) end
  local parts={}
  for k,i in state.order or {} do
-  local col=k<=state.breakerProgress and '#5aff8c' or '#ffb13c'
+  local col=(state.done.Breakers or k<=state.breakerProgress) and '#5aff8c' or '#ffb13c'
   table.insert(parts,string.format('<font color="%s">%d</font>',col,i))
  end
- s.order.Text=state.done.Breakers and '<font color="#5aff8c">MAIN BREAKERS: ON</font>' or ('BREAKER ORDER:  '..table.concat(parts,'  >  '))
+ s.order.Text=table.concat(parts,'  >  ') -- (Nov 16, Ryan: just the order, no other text: e.g. 5 > 4 > 1 > 3 > 2, each number green once flipped)
  if state.rebooted then s.status.Text='CORE ONLINE  //  ALL PUMPS NOMINAL'
  elseif state.rebootP then s.status.Text=string.format('CORE RESTART %d%%  //  STAY WITH THE CORE',math.floor(state.rebootP))
  else s.status.Text=string.format('JOBS DONE %d/5  //  CORE OFFLINE',state.doneCount) end

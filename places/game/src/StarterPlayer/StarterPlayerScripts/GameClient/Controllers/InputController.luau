@@ -365,7 +365,8 @@ function Controller:Start()
 		local c=p.Character;local h=c and c:FindFirstChildOfClass('Humanoid')
 		if not h then return end
 		if not held or held.h~=h then held={h=h,walk=h.WalkSpeed,jump=h.JumpPower,jumpH=h.JumpHeight,rotate=h.AutoRotate} end
-		h.WalkSpeed=0;h.JumpPower=0;h.JumpHeight=0;h.AutoRotate=false;h.Jump=false;h:Move(Vector3.zero)
+		local touchUI=false;pcall(function()touchUI=require(Shared.Utilities.TouchSafeControls).IsTouch()end) -- (Nov 16) touch: leave jump values (zero hides the jump button); the press is swallowed below
+		h.WalkSpeed=0;if not touchUI then h.JumpPower=0;h.JumpHeight=0 end;h.AutoRotate=false;h.Jump=false;h:Move(Vector3.zero)
 	end
 	-- Look input is switched off at the source while locked: mouse movement, the right stick, the
 	-- camera keys and right-drag are swallowed above the camera module's own bindings, so a flick of

@@ -179,16 +179,13 @@ end
 -- diameter (shares of the wheel's width), z = how far its plane sits off the part's centre (share of the depth).
 -- Measured from the Floor 5 wheel's own mesh vertices: rim from radius 1.32 to 1.58 (of 1.58), its plane 0.05
 -- in front of the part's centre; the tube is drawn a little thinner than the rim so it never shows.
-local RING={WheelMesh={r=.459,w=.063,z=-.1,n=40}}
+-- (Nov 16, Ryan: the outline on the first Floor 5 task had gone - a Highlight draws nothing round a see-through part, so
+-- the Nov 15 see-through disc showed no line) one very thin ring sitting INSIDE the rim's outer edge (hidden in the rim,
+-- opaque, so the Highlight draws it): reads as a single circle round the outside of the wheel, no spokes or hub
+local RING={WheelMesh={r=.475,w=.01,z=-.1,n=56}}
+local CIRCLE_PX=4 -- (Nov 16) line width of the wheel's circle, in SurfaceGui pixels (100 per stud)
 local function ringParts(obj,model)
  local spec=RING[obj.Name];if not spec then return nil end
- do -- (Nov 15, Ryan: 'just a circle outline around the outer part') one thin see-through disc at the rim's outer edge
-  local R=math.min(obj.Size.X,obj.Size.Y)*.5-.02
-  local off=CFrame.new(0,0,obj.Size.Z*spec.z)*CFrame.Angles(0,math.pi/2,0) -- (a cylinder's round faces point along its X: turned to face along the wheel's axis)
-  local c=Instance.new('Part');c.Name='RimDisc';c.Shape=Enum.PartType.Cylinder;c.Anchored=true;c.CanCollide=false;c.CanQuery=false;c.CanTouch=false;c.CastShadow=false
-  c.Size=Vector3.new(.03,R*2,R*2);c.Transparency=.99;c.Material=Enum.Material.SmoothPlastic;c.CFrame=obj.CFrame*off;c.Parent=model
-  return {{src=obj,copy=c,cf=obj.CFrame,off=off}}
- end
  local R=math.min(obj.Size.X,obj.Size.Y)*spec.r;local seg=2*math.pi*R/spec.n*1.02
  local list={}
  for i=0,spec.n-1 do
@@ -214,11 +211,25 @@ function Controller:_Mark(obj)
   -- the rim: full strength while you can see the wheel, softer while a wall is in the way (the full-strength
   -- line through walls read as a smeared shape)
   local model=Instance.new('Model');model.Name='Outline_'..obj.Name
-  local pairs_=ringParts(obj,model)
-  local h=nil
-  if OUTLINE_STYLE=='Shell' then shellify(pairs_,.01) else h=outline(model,Enum.HighlightDepthMode.AlwaysOnTop) end
+  -- (Nov 16, Ryan: 'one outline round the wheel, seen through walls, like the other ones') a Highlight can't do a
+  -- single circle round a spoked wheel (it also traces every gap between the spokes, and a hidden ring drew two
+  -- lines and no line through walls). The wheel's outline is ONE white circle at the rim's outer edge, drawn by an
+  -- always-on-top SurfaceGui on an invisible disc in the wheel's plane (both faces), so it shows through walls.
+  local spec=RING[obj.Name]
+  local D=math.min(obj.Size.X,obj.Size.Y)+.06
+  local off=CFrame.new(0,0,obj.Size.Z*spec.z)
+  local disc=Instance.new('Part');disc.Name='RimCircle';disc.Anchored=true;disc.CanCollide=false;disc.CanQuery=false;disc.CanTouch=false;disc.CastShadow=false
+  disc.Transparency=1;disc.Size=Vector3.new(D,D,.05);disc.CFrame=obj.CFrame*off;disc.Parent=model
+  local strokes={}
+  for _,face in {Enum.NormalId.Front,Enum.NormalId.Back} do
+   local g=Instance.new('SurfaceGui');g.Face=face;g.AlwaysOnTop=true;g.LightInfluence=0;g.SizingMode=Enum.SurfaceGuiSizingMode.PixelsPerStud;g.PixelsPerStud=100;g.Adornee=disc;g.Parent=disc
+   local f=Instance.new('Frame');f.BackgroundTransparency=1;f.AnchorPoint=Vector2.new(.5,.5);f.Position=UDim2.fromScale(.5,.5);f.Size=UDim2.new(1,-CIRCLE_PX,1,-CIRCLE_PX);f.Parent=g
+   local c=Instance.new('UICorner');c.CornerRadius=UDim.new(.5,0);c.Parent=f
+   local s=Instance.new('UIStroke');s.Color=Color3.fromRGB(236,234,222);s.Thickness=CIRCLE_PX;s.Transparency=1;s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border;s.Parent=f
+   table.insert(strokes,s)
+  end
   model.Parent=folder()
-  self._marks[obj]={obj=obj,model=model,h=h,parts=pairs_,alpha=0,leaving=false,ring=true,seen=1}
+  self._marks[obj]={obj=obj,model=model,h=nil,circle=strokes,parts={{src=obj,copy=disc,cf=obj.CFrame,off=off}},alpha=0,leaving=false,ring=true,seen=1}
   return
  end
  if obj:IsA('BasePart') and obj:GetAttribute('EHItemState')~=nil and OUTLINE_STYLE=='Shell' then
@@ -299,7 +310,13 @@ function Controller:_DrawOutlines(dt)
    local far=math.clamp((dist-nearD)/(farD-nearD),0,1);local farK=1-far*far*(3-2*far)
    if mk.rangeK==nil then mk.rangeK=farK end
    mk.rangeK+=(farK-mk.rangeK)*(1-math.exp(-math.clamp(dt,0,.1)*6))
-   if mk.h then
+   if mk.circle then
+    -- the wheel's single circle (always on top): same strength rules as the other outlines
+    local strength=mk.alpha
+    if OUTLINE_ALWAYS then local u=math.clamp((dist-FAR_SOFT[1])/(FAR_SOFT[2]-FAR_SOFT[1]),0,1);u=u*u*(3-2*u);strength=mk.alpha*(1-FAR_SOFT[3]*u) end
+    local t=1-(1-OUTLINE_T)*strength
+    for _,s in mk.circle do if math.abs(s.Transparency-t)>.002 then s.Transparency=t end end
+   elseif mk.h then
     -- never through walls: the stand-in sits a hair inside the real object, so the Highlight stays AlwaysOnTop,
     -- and a ray from the camera decides whether the thing is actually in view (checked a few times a second,
     -- eased so it never blinks)

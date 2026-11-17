@@ -4,7 +4,7 @@ local Util=require(game.ReplicatedStorage.Game.Shared.Utilities.TableUtil)
 local Policy=require(script.Parent.SessionPolicy)
 local Directory={};Directory.__index=Directory
 function Directory.new(map,clock)
-	return setmetatable({_map=map or game:GetService("MemoryStoreService"):GetHashMap("EH_Sessions_v1"),_clock=clock or os.time},Directory)
+	return setmetatable({_map=map or require(script.Parent.SessionStore).new("EH_Sessions_v1"),_clock=clock or os.time},Directory)
 end
 function Directory:Get(id)return self._map:GetAsync("s:"..id)end
 function Directory:Create(id,roster,accessCode,privateId,meta)
@@ -22,7 +22,7 @@ function Directory:Create(id,roster,accessCode,privateId,meta)
 			local index=self._map:GetAsync("u:"..uid)
 			if index and index.id~=id and index.expires>now then
 				local other=self._map:GetAsync("s:"..index.id)
-				replaceable=not other or (other.status~="Allocating" and other.status~="Waiting")
+				replaceable=not other or (other.status~="Allocating" and other.status~="Waiting") or (now-(other.createdAt or now))>30 -- (Nov 16) a launch still in flight after 30 s never arrived
 			end
 			local result=self._map:UpdateAsync("u:"..uid,function(old)
 				if old and old.id~=id and old.expires>now and not replaceable then return nil end

@@ -17,6 +17,7 @@ local TURN_SHARE=.62     -- part of the cycle spent turning (the rest is the han
 local BACKOUT=.36        -- how far a screw travels out of its hole before it is free
 local SCREW_PARTS={Head=true,Washer=true,Shank=true,Slot=true}
 local function smooth(x)x=math.clamp(x,0,1);return x*x*(3-2*x)end
+local VENT_SCREWS_ENABLED=false -- (Nov 16) screws removed from every vent; the hand + screwdriver is never drawn
 function Controller.new(player)return setmetatable({Name='VentScrewController',Dependencies={'InputController'},_player=player,_spins={}},Controller)end
 function Controller:Init(deps)self._input=deps.InputController;self._scope=Scope.new()end
 -- outward (into the room) axis of a screw: from its head toward its grab box
@@ -229,6 +230,7 @@ function Controller:_Render(dt)
 end
 function Controller:Start()
  self._watched=setmetatable({},{__mode='k'})
+ if not VENT_SCREWS_ENABLED then return end
  local function consider(d)if d:IsA('Model') and d.Name=='CornerScrew' then self:_Watch(d)end end
  local function hookRuntime(r)
   for _,d in r:GetDescendants()do consider(d)end

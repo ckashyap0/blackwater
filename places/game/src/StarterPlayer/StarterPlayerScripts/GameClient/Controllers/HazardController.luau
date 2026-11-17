@@ -231,6 +231,7 @@ end
 -- (R27: hands now plant at about shoulder width - they used to meet under the chin, which read as
 -- the hands being glued together from another player's view; still well inside a 3-stud duct)
 local ARM_CORRIDOR,ELBOW_BOX=.95,1.5
+local HAND_MAX=1.2 -- (Nov 16) widest the hands plant from the body's centre line (the duct is 3 studs across)
 local function proneArms(r,c,phase,move,weight,dt)
  if weight<=.001 then r.armSmooth=nil;return end
  r.armSmooth=r.armSmooth or {}
@@ -251,17 +252,18 @@ local function proneArms(r,c,phase,move,weight,dt)
    local heave=.03*math.sin(phase-math.pi/2)*move
    local reach=(a.L1+a.L2)*.9
    local yBack=S.Y+.35;local yFront=S.Y+math.max(.6,reach-.25)
-   local W=Vector3.new(side*math.min(.72,ARM_CORRIDOR-.08),yBack+(yFront-yBack)*f,floorZ+.1+.15*recover*move+heave)
+   local handX=math.clamp(math.abs(S.X)+.18,.95,HAND_MAX) -- (Nov 16, Ryan: hands looked crunched together from the front) just outside the shoulders, like a real army crawl
+    local W=Vector3.new(side*handX,yBack+(yFront-yBack)*f,floorZ+.1+.15*recover*move+heave)
    -- torch on: the right hand stops pulling and holds the light out ahead, just off the duct floor,
    -- bobbing slightly with the body (the torch model is held in the RightHand, so it points up the duct)
    local lw=side>0 and (r.lightW or 0) or 0
    if lw>.001 then
     local bob=.04*math.sin(phase*2)*move
-    local hold=Vector3.new(side*.5,S.Y+reach*.93,floorZ+.42+bob)
+    local hold=Vector3.new(side*.7,S.Y+reach*.93,floorZ+.42+bob)
     W=W:Lerp(hold,lw)
    end
    -- elbows: back along the ribs and in under the chest
-   local pole=Vector3.new(side*.35,-1,-.45).Unit -- elbows out to the sides, like a real army crawl
+   local pole=Vector3.new(side*.6,-1,-.35).Unit -- elbows out to the sides, like a real army crawl
    local T1,T2,E=solveArm(a,W,pole)
    -- keep the elbow inside the 2.5-stud box (pull it toward the centre if a wide avatar pushes it out)
    if math.abs(E.X)>ELBOW_BOX then
@@ -1438,7 +1440,7 @@ end
 -- drop down onto your feet below it (EXIT_SECONDS), again moved smoothly and replicated.
 local CrouchState=require(Shared.Utilities.CrouchState)
 local VENT_HIP=.35
-local EXIT_SECONDS=.8
+local EXIT_SECONDS=1.15 -- (Nov 16, Ryan: 'make going out of the vents much smoother') was .8
 local function inVolume(volume,pos)
  local p=volume.CFrame:PointToObjectSpace(pos);local h=volume.Size/2
  return math.abs(p.X)<=h.X and math.abs(p.Y)<=h.Y and math.abs(p.Z)<=h.Z
@@ -1513,13 +1515,17 @@ local function prone(v,c,h,root,on)
   hb.CFrame=root.CFrame*w.C0;w.Parent=hb;hb.Parent=c
   v.prone={hb=hb,collide=root.CanCollide,jump=h:GetStateEnabled(Enum.HumanoidStateType.Jumping),walk=h.WalkSpeed}
   root.CanCollide=false
-  h:SetStateEnabled(Enum.HumanoidStateType.Jumping,false)
+  -- (Nov 16, Ryan: keep the mobile controls in vents, just make them do nothing) on a touch screen jumping is
+  -- swallowed each frame instead of switched off, so the jump button stays on screen
+  local TS=require(Shared.Utilities.TouchSafeControls)
+  if TS.IsTouch() then TS.NoJump('Vent',true) else h:SetStateEnabled(Enum.HumanoidStateType.Jumping,false) end
  elseif not on and v.prone then
   local s=v.prone;v.prone=nil
   if s.hb then s.hb:Destroy() end
   if root.Parent then root.CanCollide=s.collide end
   for _,n in {'UpperTorso','LowerTorso','Torso'} do local bp=c:FindFirstChild(n);if bp and bp:IsA('BasePart') then bp.CanCollide=true end end
   if h.Parent then h:SetStateEnabled(Enum.HumanoidStateType.Jumping,s.jump~=false) end
+  pcall(function()require(Shared.Utilities.TouchSafeControls).NoJump('Vent',false)end)
  end
 end
 local function dropAlign(v)
@@ -1755,7 +1761,7 @@ function Controller:_Vent(dt)
     local standY=floorY+v.hip+root.Size.Y/2
     local start=root.Position
     v.exitKeys={start,Vector3.new(lip.X,lip.Y-.15,lip.Z)+outward*.55,Vector3.new(landing.X,math.max(standY+.9,floorY+2.6),landing.Z)-outward*.3,Vector3.new(landing.X,standY,landing.Z)}
-    v.exitTimes={0,.3,.68,1}
+    v.exitTimes={0,.34,.74,1}
     v.exitRot=CFrame.lookAt(Vector3.zero,outward).Rotation
     v.exitFrom=root.CFrame.Rotation
     v.exitAt=os.clock();v.phase='exit'
@@ -1778,8 +1784,8 @@ function Controller:_Vent(dt)
   local u=math.clamp((os.clock()-v.exitAt)/EXIT_SECONDS,0,1)
   drive(root,v.exitKeys,v.exitTimes,u,EXIT_SECONDS,v.exitFrom:Lerp(v.exitRot,smooth(u/.5)))
   -- unfold from hands and knees back to standing as you drop
-  h.HipHeight=v.proneHip+(v.hip-v.proneHip)*smooth(math.clamp((u-.25)/.75,0,1))
-  if u>=1 then hold(v,c,h,false);h.HipHeight=v.hip;h.AutoRotate=true;v.phase='done' end
+  h.HipHeight=v.proneHip+(v.hip-v.proneHip)*smooth(math.clamp((u-.2)/.8,0,1))
+  if u>=1 then root.AssemblyLinearVelocity=Vector3.zero;hold(v,c,h,false);h.HipHeight=v.hip;h.AutoRotate=true;v.phase='done' end -- (Nov 16) lands at rest: no jolt when the Humanoid takes over
   return
  end
  if v.phase=='done' then
