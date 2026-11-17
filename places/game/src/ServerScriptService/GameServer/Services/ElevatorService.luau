@@ -428,8 +428,8 @@ function Service:_Seal()
 	if not self:_Command("CleanupResult",{succeeded=true}).ok then self:_Failure("CleanupFailed");return end
 	t=mark("CleanupResult",t)
 	-- A fixed five-second descent with the motor running; doors open on arrival with no eye-open fade.
-	-- (Nov 15) the ride down from Level 5 is longer: Marty's ceiling scare plays during it (MartyCeiling)
-	local ride=(leaving==5) and 8 or 5
+	-- (Nov 16) the ride down from Level 5 is longer and smooth: Marty's glitch flash plays during it (MartyFlash)
+	local ride=(leaving==5) and 7 or 5
 	self._travel=ride;self._attempts=0;self._retry=0
 	self._cabin:SetAttribute("TravelFromFloor",leaving)
 	-- (R41) leaving Level 3: three knocks on the cabin roof, a pause, three more (Utilities.KnockSignal)
@@ -1258,6 +1258,25 @@ function Service:_AdminCommand()
 		local n=tonumber(string.match(string.lower(text or ""),"^/floor%s+transfer%s+(%d+)") or string.match(string.lower(text or ""),"^/floor%s+(%d+)"))
 		local ok,msg=self:AdminTransfer(player,n)
 		player:SetAttribute("EHAdminReply",(ok and "" or "! ")..msg)
+		player:SetAttribute("EHAdminReplySerial",(player:GetAttribute("EHAdminReplySerial") or 0)+1)
+	end))
+	-- (Nov 16) "/skip" for testing (Owner / Co-Owner only, like /floor): on the surface it puts the crew in the lift
+	-- and starts the ride down straight away (skips the drive, check-in, Marty and the walk); during the ride
+	-- down it jumps to the end, so you land on Level 5. "/floor <n>" then goes to any floor.
+	local skip=TCS:FindFirstChild("BlackwaterSkip")
+	if not skip then skip=Instance.new("TextChatCommand");skip.Name="BlackwaterSkip";skip.PrimaryAlias="/skip";skip.Parent=TCS;self._scope:Add(skip) end
+	self._scope:Add(skip.Triggered:Connect(function(source)
+		local player=source and self._players:GetPlayerByUserId(source.UserId);if not player then return end
+		if not self:_IsAdmin(player) then return end
+		if os.clock()-(last[player] or 0)<2 then return end;last[player]=os.clock()
+		local ok,res=pcall(self._Debug,self,"SkipIntro")
+		local msg
+		if not ok then msg="! Skip failed: "..tostring(res)
+		elseif res=="Boarding->Descent" then msg="Skipping to the ride down..."
+		elseif res=="IntroSkipped" then msg="Skipping to Level 5..."
+		elseif res=="NoRun" then msg="! No run is active."
+		else msg="! Nothing to skip here. Use /floor 1-5 to change floor." end
+		player:SetAttribute("EHAdminReply",msg)
 		player:SetAttribute("EHAdminReplySerial",(player:GetAttribute("EHAdminReplySerial") or 0)+1)
 	end))
 end

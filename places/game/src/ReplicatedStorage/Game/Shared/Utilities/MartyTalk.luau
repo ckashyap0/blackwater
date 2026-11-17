@@ -213,21 +213,14 @@ function M.Start()
 			if not m or (m:GetAttribute('TalkSets') or 'Gate') ~= 'Gate' then return nil end
 			return {key = yard, text = 'Talk to Marty', targets = {m}}
 		end)
-		-- (Nov 13) once the gate has shut and Marty has gone on ahead: up the road (the road barriers keep the
-		-- crew on it), find him at the shaft hall, then by the lift, then take the lift down
+		-- once the gate has shut (Marty has gone): take the lift down (Nov 16: he no longer waits at the shaft hall / lift)
 		Sources.Register('MartyAhead', function(p)
 			if p ~= player or player:GetAttribute('EHCinematic') then return nil end
 			local runtime = workspace:FindFirstChild('Runtime')
 			local yard = runtime and runtime:FindFirstChild('SurfaceYard', true)
 			if not yard or not yard:GetAttribute('GateClosedAt') then return nil end
-			local m
-			for _, x in CS:GetTagged('MartyNPC') do if x:IsDescendantOf(yard) then m = x break end end
-			local spot = m and m:GetAttribute('TalkSets')
-			local key = yard
-			if spot == 'Shaft' and not player:GetAttribute('EHMartyTalkedShaft') then return {key = key, text = 'Follow the road and talk to Marty at the shaft hall', targets = {m}} end
-			if spot == 'Lift' and not player:GetAttribute('EHMartyTalkedLift') then return {key = key, text = 'Talk to Marty by the lift', targets = {m}} end
-			if spot == 'Lift' then return {key = key, text = 'Take the lift down', targets = {}} end
-			return nil
+			-- (Nov 16, Ryan) Marty does not turn up again on the surface after the gate: straight to the lift
+			return {key = yard, text = 'Take the lift down', targets = {}}
 		end)
 	end
 	player:GetAttributeChangedSignal('EHCinematic'):Connect(function()
@@ -241,7 +234,9 @@ function M.Start()
 		goneFor = opened
 		player:SetAttribute('EHMartyTalkSet', 'Gone'); player:SetAttribute('EHMartyTalkAt', now + .5)
 	end)
+	local Guard = require(script.Parent.TalkGuard)
 	RunService.RenderStepped:Connect(function()
+		if Guard.Blocked() then if gui.Enabled then gui.Enabled = false end; lastKey = nil; return end -- (Nov 16) never over a scene change
 		local at, set = player:GetAttribute('EHMartyTalkAt'), player:GetAttribute('EHMartyTalkSet')
 		local timeline = M.Timelines[set]
 		local t = (type(at) == 'number' and timeline) and (workspace:GetServerTimeNow() - at) or -1

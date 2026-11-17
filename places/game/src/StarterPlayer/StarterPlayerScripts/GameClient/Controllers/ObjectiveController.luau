@@ -63,6 +63,7 @@ local STANDIN_T=0 -- (Nov 13: a Highlight skips see-through parts, so the stand-
                   -- handled by the larger INSET and the distance fade below)
 local FAR_FULL,FAR_NONE,FAR_DEPTH=16,24,0 -- (Nov 13, later) the line only comes in once you are close enough to use the thing (full inside 16 studs, gone past 24), and never through walls -- (Nov 13, Ryan) full line inside 26 studs, fades out by 58; no through-wall line past 40
 local OUTLINE_T=0 -- (Nov 15, Ryan: crisp, solid line) was .08
+local FAR_SOFT={28,110,.6} -- (Nov 16) studs where the line starts to soften, where it is softest, and how far it softens (0-1)
 local OUTLINE_ALWAYS=true -- (Nov 15, Ryan) no fade-in, no distance or close-up fade, visible through walls from anywhere
 --      -- (R36) outline transparency when fully shown: a firm, clear line, through walls too
 local INSET=.03           -- (Nov 13: was .012 - at range the stand-in z-fought the real face and the line crawled) studs: how far each stand-in face sits inside the real one (a fixed hair, not a
@@ -315,7 +316,13 @@ function Controller:_DrawOutlines(dt)
     end
     mk.viewK=(mk.viewK or 0)+(((mk.inView~=false) and 1 or 0)-(mk.viewK or 0))*(1-math.exp(-math.clamp(dt,0,.1)*10))
     local strength=mk.alpha*near*mk.rangeK*mk.viewK
-    if OUTLINE_ALWAYS then strength=mk.alpha end
+    if OUTLINE_ALWAYS then
+     -- (Nov 16, Ryan: 'the outlines look weird from far away') still on everywhere and through walls, but a
+     -- Highlight's line is a fixed pixel width, so on a small far-off shape it turned into a hard, jagged block.
+     -- Past FAR_SOFT studs it eases to a softer, see-through line (never gone), and stays crisp up close.
+     local u=math.clamp((dist-FAR_SOFT[1])/(FAR_SOFT[2]-FAR_SOFT[1]),0,1);u=u*u*(3-2*u)
+     strength=mk.alpha*(1-FAR_SOFT[3]*u)
+    end
     local t=1-(1-OUTLINE_T)*strength
     if math.abs(mk.h.OutlineTransparency-t)>.002 then mk.h.OutlineTransparency=t end
     local on=strength>.01
@@ -342,7 +349,7 @@ function Controller:_Update()
  local now=os.clock()
  if active then self._activeSince=self._activeSince or now;self._inactiveSince=nil else self._inactiveSince=self._inactiveSince or now;self._activeSince=nil end
  local shown=active or (self._screen.Enabled and now-(self._inactiveSince or now)<.45)
- if self._screen.Enabled~=shown then self._screen.Enabled=shown end
+ if self._screen.Enabled~=shown then self._screen.Enabled=shown;if shown then self._shownAt=now end end
  -- after the lift the task bar fades in with the rest of the HUD
   -- (the fade-in with the HUD runs every frame in _FadeStep, not on this slower tick)
 
@@ -390,14 +397,18 @@ function Controller:_Update()
   local sameShape=self._pending~=nil and (string.gsub(composed,'%d',''))==(string.gsub(self._pending,'%d',''))
   self._pending=composed;if not sameShape then self._pendingSince=now end
  end
- if composed~=self._shownState and (self._shownState==nil or now-(self._pendingSince or now)>=.2) then
+ -- (Nov 16, Ryan: 'the objective fades out to a different one - this should NEVER occur') while the bar is
+ -- hidden or still easing back in after a cutscene / black fade, a new objective is swapped in at once and with
+ -- no fade of its own, so the bar only ever comes back already showing the right line
+ local hidden=(self._cutK or 1)<.995 or (self._shownAt and now-self._shownAt<.3)
+ if composed~=self._shownState and (self._shownState==nil or hidden or now-(self._pendingSince or now)>=.2) then
   self._shownState=composed
    if self._label.Text~=message then
     -- a number ticking over (restart %, jobs 2/5) updates the line in place; only a new objective fades in
     local same=(string.gsub(self._label.Text,'%d',''))==(string.gsub(message,'%d',''))
-    self._label.Text=message;if not same then self._textIn=os.clock() end -- (fades in smoothly: _FadeStep)
+    self._label.Text=message;if not same and not hidden then self._textIn=os.clock() elseif hidden then self._textIn=nil end -- (fades in smoothly: _FadeStep)
    end
-   if self._side.Text~=side then self._side.Text=side;self._textIn=os.clock() end
+   if self._side.Text~=side then self._side.Text=side;if not hidden then self._textIn=os.clock() end end
   local showSide=side~='' and (self._expand or 1)>.02 -- (folded away: _FadeStep shows it again on opening)
   if self._side.Visible~=showSide then self._side.Visible=showSide end
  end
@@ -469,6 +480,8 @@ function Controller:_FadeStep()
  -- intro, a black fade) and back in after, instead of sitting over them
  local ctx=self._input and self._input:GetContext()
  local away=self._player:GetAttribute('EHCinematic')~=nil or (ctx~=nil and ctx~='ActiveFloor')
+ -- (Nov 16) a line that is about to change is never shown fading back in: the bar waits until it is current
+ if self._pending~=nil and self._pending~=self._shownState and (self._cutK or 1)<.995 then away=true end
  local pg=self._player:FindFirstChild('PlayerGui')
  if not away and pg then for _,n in {'ArrivalCover','DescentFade','WakeLids','ArrivalText','IntroHud'} do local g=pg:FindFirstChild(n);if g and g.Enabled then away=true;break end end end
  self._cutK=self._cutK or (away and 0 or 1)
