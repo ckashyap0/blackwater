@@ -169,9 +169,10 @@ function Controller:_WaterStep(dt)
 				elseif w.rumble then
 					w.rumble.Volume=0;if w.lap then w.lap.Volume=0 end
 				end
-				if cam and vol and cam.CFrame.Position.Y<level then
+				if risen and cam and vol and cam.CFrame.Position.Y<level then
 					local lp=vol.CFrame:PointToObjectSpace(cam.CFrame.Position);local h=vol.Size/2
-					if math.abs(lp.X)<=h.X and math.abs(lp.Z)<=h.Z then murky=true end
+					-- inside the flood's own box only: the bypass chamber under the hall floor stays dry
+					if math.abs(lp.X)<=h.X and math.abs(lp.Z)<=h.Z and lp.Y>=-h.Y then murky=true end
 				end
 			end
 		end

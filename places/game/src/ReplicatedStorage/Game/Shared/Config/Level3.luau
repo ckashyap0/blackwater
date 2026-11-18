@@ -135,6 +135,8 @@ return Freeze({
 		Filter4Surge={
 			{fx='Beacons',refs={'HallBeacon1','HallBeacon2','HallBeacon3','F4WorkLamp','FloodLamp1','FloodLamp2','FloodLamp3','FloodLamp4'},seconds=240,keep=true},
 			{fx='Shake',amp=.45,seconds=2.5,at=.8},
+			-- a low cold lamp over Filter 4 so the spill reads in the cut (a high lamp leaves it a void)
+			{fx='Lights',refs={'F4SurfaceGlow'},on=true,keep=true},
 			{fx='Burst',ref='BedWater4',kind='Mist',seconds=20},
 			{fx='Lights',refs={'BedGlow2_1','BedGlow2_2','BedGlow6_1','BedGlow6_2'},on=false,gap=.5,at=2.2,keep=true},
 			{fx='Sound',ref='BedWater4',sound='Roar',volume=.8,speed=.6,life=9,at=.6},
@@ -159,6 +161,6 @@ return Freeze({
 		motor='rbxassetid://9112889325',drone='rbxassetid://9112839813',
 		-- found for this floor (Pro Sound Effects clips on the Creator Store); empty = fall back to the nearest one above
 		lap='rbxassetid://9120570661',fan='rbxassetid://9114776167',fizz='rbxassetid://9119380766',
-		cough='rbxassetid://9116457892',bulb='rbxassetid://9114592817',scour='rbxassetid://9125741935',
+		cough='rbxassetid://9116457892',bulb='', -- bulb = the booth bulb's looping hum (falls back to motor), not a popscour='rbxassetid://9125741935',
 	},
 })
