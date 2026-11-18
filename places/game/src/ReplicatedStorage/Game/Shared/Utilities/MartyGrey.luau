@@ -75,13 +75,15 @@ end
 local function run(floor, at)
 	M.Active = true
 	local bulb = Refs.Find(floor, 'BoothBulb')
-	local light = bulb and bulb:FindFirstChildWhichIsA('Light')
+	-- (R43) every light in the bulb: the bulb itself and the warm fill in front of his face (BoothFill)
+	local lights = {}
+	if bulb then for _, d in bulb:GetDescendants() do if d:IsA('Light') then table.insert(lights, d) end end end
 	local puddle = Refs.Find(floor, 'BoothPuddle')
 	local model = build(floor)
 	local S = Config.Sounds
 	local glassOff, glassOn = bulb and bulb.Color, Color3.fromRGB(255, 214, 150)
 	local function lamp(on)
-		if light then light.Enabled = on end
+		for _, l in lights do l.Enabled = on end
 		if bulb then bulb.Material = on and Enum.Material.Neon or Enum.Material.Glass; bulb.Color = on and glassOn or glassOff end
 		oneShot(S.click, .5, on and 1.5 or 1.2, bulb, 2)
 	end
@@ -122,7 +124,7 @@ local function run(floor, at)
 	if not ok then warn('[ElevatorHorror] grey face: ' .. tostring(err)) end
 	if model then model:Destroy() end
 	if buzz then buzz:Destroy() end
-	if light then light.Enabled = false end
+	for _, l in lights do l.Enabled = false end
 	M.Active = false
 end
 

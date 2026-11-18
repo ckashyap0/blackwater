@@ -1,24 +1,32 @@
 --!nonstrict
--- LEVEL 3: FILTRATION. Design guide: vault Floors/Floor 3.md.
---   1  Fumes    Start the extract fan in the dosing room (the room is full of ferric fumes).
---   2  Dosing   Shut off the two dosing pumps.
---   3  Inlets   Close the six filter inlets at the consoles on the centre deck (any order, any crew
---               member). Each closed bed lets its black water reach further along the deck drain.
---   4  Bypass   THE SPLIT-UP. One crew member takes the bypass key down the one-person hatch at the
---               end of the pipe gallery and turns the bypass wheel three times. The wheel only moves
---               while the rest of the crew hold header pressure at the console on the deck (the bar
---               only fills while someone stands by it; a solo player latches it). While they are
---               apart the intercoms speak under each other's names (Config.Level3.Radio).
---               When the wheel is open the booth bulb comes on: Marty at the glass, grey (MartyGrey).
---   5  Lift     Walk back through the dark hall and go down.
--- Black water, the light rule and the fumes live in BlackWaterReach. Everything the clients show is
--- published as attributes (floor model: stage, timestamps, pressure; player: EHL3*, EHRadio*).
--- Marty: one model in Level3.MartyMarkers, moved between its stands only while nobody can see him.
--- He never moves in view, never touches the water, hurts nobody, and tells the truth about the job.
+-- LEVEL 3: FILTRATION (R43 rebuild on the shared set-piece systems). Design: vault Floors/Floor 3.md and
+-- repo tasks/R43_active_redesign_plan.md.
+--   1  Leak     Walking into the dosing room splits drum 9 (beat DrumBurst: gas, beacons). Crank the drum's
+--               valve shut in the bund, then pull the extract fan lever.
+--   2  Isolate  Three valves on the dosing manifold; their tag colours are shuffled each run and the placard
+--               says ferric = orange. The wrong valve gasses the room again (beat WrongLine).
+--   3  Beds     The service board by the hall door lists the five running filters in a random order. Close
+--               them in that order (each bed air-scours as it shuts). The wrong one makes every bed surge.
+--   4  Filter4  Filter 4's console is dead. A cut shows it lift over its weir and the hall starts to flood
+--               (Floors.RisingWater). Shut its hand wheel down in the pipe gallery. The black water on the
+--               gallery floor sits on the valve unless someone draws it off with a light. If the flood gets too
+--               high the crew is pushed back to the passage (Floors.PushBack) and the water drops a stage.
+--   5  Bypass   THE SPLIT-UP. The key carrier goes down the one-person hatch and cranks the bypass wheel (three
+--               turns); it only moves while the crew keep the header pumped (a Pump job that drains). The
+--               intercoms speak under each other's names. When it opens: the grey face at the booth glass.
+--   6  Lift     A cut: the clean channel in the office turns black and the panel shows the town main is next.
+--               The hall lights die from the far end toward the lift. Marty waits at the passage end.
+-- Black water, the light rule and the fumes live in BlackWaterReach. Everything the clients show is published as
+-- attributes (floor: stage, timestamps, pressure, Beat_*; player: EHL3*, EHRadio*).
+-- Marty: moves between stands only while nobody can see him, never touches the water, hurts nobody.
 local Config=require(game.ReplicatedStorage.Game.Shared.Config.Level3)
 local Scope=require(game.ReplicatedStorage.Game.Shared.Utilities.CleanupScope)
 local Refs=require(game.ReplicatedStorage.Game.Shared.Utilities.FloorRefs)
+local Cinematic=require(game.ReplicatedStorage.Game.Shared.Utilities.Cinematic)
 local BlackWater=require(script.Parent.BlackWaterReach)
+local Beats=require(script.Parent.BeatRunner)
+local Water=require(script.Parent.RisingWater)
+local PushBack=require(script.Parent.PushBack)
 local Players=game:GetService('Players')
 local RunService=game:GetService('RunService')
 local function Ref(root,name)return Refs.Find(root,name)end
@@ -26,8 +34,11 @@ local function fx(name,fn)local ok,err=pcall(fn);if not ok then warn('[ElevatorH
 local Floor={};Floor.__index=Floor
 local STAGES=Config.Stages
 local H=Config.Holds
+local W=Config.Work
+local TAGS={{name='ORANGE',color=Color3.fromRGB(214,108,30)},{name='BLUE',color=Color3.fromRGB(46,92,170)},{name='GREEN',color=Color3.fromRGB(52,140,70)}}
 function Floor.new(model,number)
- return setmetatable({Model=model,Number=number,_state='Inactive',_stage='Fumes',_pumps={},_inlets={},_inletCount=0,_turns=0,
+ return setmetatable({Model=model,Number=number,_state='Inactive',_stage='Leak',_inlets={},_inletCount=0,_turns=0,
+  _valveShut=false,_fanOn=false,_isolated=false,_order={},_orderIdx=1,_f4Shut=false,
   _said={},_queue=setmetatable({},{__mode='k'}),_scope=Scope.new(),_rng=Random.new(),_martyAt=nil},Floor)
 end
 function Floor:_Now()return workspace:GetServerTimeNow() end
@@ -50,6 +61,14 @@ function Floor:_Progress()self._progressAt=os.clock()end
 function Floor:_Toast(player,text)
  if typeof(player)=='Instance' then player:SetAttribute('EHL3Toast',text);player:SetAttribute('EHL3ToastSerial',(player:GetAttribute('EHL3ToastSerial') or 0)+1) end
 end
+function Floor:_Work(id)
+ local get=self._context.GetInteractionProgress
+ if not get then return 0,1 end
+ local p,w=get(id);return p or 0,w or 1
+end
+function Floor:_SetWork(id,v)local set=self._context.SetInteractionProgress;if set then set(id,v) end end
+-- a beat that can play more than once (wrong valve, wrong bed)
+function Floor:_Replay(name)if self._beats then self._beats:Reset({name});self._beats:Fire(name) end end
 ------------------------------------------------------------------ intercom lines
 -- One line to one player: who (shown name), face (a user id for a headshot, 0 = none), kind
 -- ('Marty' | 'Crew' | 'Old'). Lines to the same player never overlap: a second one waits its turn.
@@ -100,25 +119,28 @@ function Floor:_SetSent(player)
  for _,p in self._context.GetPlayers()do if typeof(p)=='Instance' then p:SetAttribute('EHL3Sent',p==player and true or nil) end end
 end
 ------------------------------------------------------------------ publish
+function Floor:_Pressure()
+ if not self._header then return 0 end
+ return self._header.progress
+end
 function Floor:_Publish()
  local m=self.Model;local active=self._state=='Active'
  local T=Config.Text
  local text,sentText,targets='','',{}
- if self._stage=='Fumes' then text=T.Fumes;targets={'FanStarter'}
- elseif self._stage=='Dosing' then
-  local n=0;for _ in self._pumps do n+=1 end
-  text=string.format(T.Dosing,n)
-  for i=1,2 do if not self._pumps[i] then table.insert(targets,'DosingSwitch'..i) end end
- elseif self._stage=='Inlets' then
-  text=string.format(T.Inlets,self._inletCount)
-  for i=1,6 do if not self._inlets[i] then table.insert(targets,'FilterConsole'..i) end end
+ if self._stage=='Leak' then
+  if not self._valveShut then text=T.LeakValve;targets={'BundValve'} else text=T.LeakFan;targets={'FanStarter'} end
+ elseif self._stage=='Isolate' then text=T.Isolate;targets={'IsoValve1','IsoValve2','IsoValve3'}
+ elseif self._stage=='Beds' then
+  text=string.format(T.Beds,self._orderIdx-1);targets={'ServiceBoard'}
+  local nxt=self._order[self._orderIdx];if nxt then table.insert(targets,'FilterConsole'..nxt) end
+ elseif self._stage=='Filter4' then text=T.Filter4;targets={'F4HandWheel'}
  elseif self._stage=='Bypass' then
   local installed,state,carrier=self:_KeyState()
   local h=self._header
   if not installed and not carrier then
    text=state=='Dropped' and T.KeyDropped or T.KeyOnHook;sentText=text;targets={'BypassKey'}
   else
-   if not h then text=T.CrewStart
+   if not h or h.progress<=0 then text=T.CrewStart
    elseif h.near or h.latched then text=string.format(T.CrewHold,math.floor(h.progress))
    else text=string.format(T.CrewAway,math.floor(h.progress)) end
    if not installed then sentText=self._occupant and T.SentKey or T.SentAbove
@@ -129,14 +151,17 @@ function Floor:_Publish()
  if self._state=='Completed' then text=T.Lift;sentText=T.Lift;targets={'ControlBox'} end
  local enable=self._context.SetInteractionEnabled
  if enable then
-  enable('BW3Fan',active and self._stage=='Fumes')
-  for i=1,2 do enable('BW3Pump'..i,active and self._stage=='Dosing' and not self._pumps[i]) end
-  for i=1,6 do enable('BW3Inlet'..i,active and self._stage=='Inlets' and not self._inlets[i]) end
-  enable('BW3Header',active and self._stage=='Bypass' and not self._header)
-  enable('BW3Wheel',active and self._stage=='Bypass' and self._turns<Config.Wheel.Turns)
-  enable('BW3HatchDown',(active or self._state=='Completed') and (self._stage=='Bypass' or self._stage=='Lift') and not self._occupant)
+  local st=self._stage
+  enable('BW3BundValve',active and st=='Leak' and not self._valveShut)
+  enable('BW3FanLever',active and st=='Leak' and self._valveShut and not self._fanOn)
+  for i=1,3 do enable('BW3Iso'..i,active and st=='Isolate') end
+  for _,i in Config.Beds.Running do enable('BW3Bed'..i,active and st=='Beds' and not self._inlets[i]) end
+  enable('BW3F4Wheel',active and st=='Filter4' and not self._f4Shut)
+  enable('BW3Header',active and st=='Bypass')
+  enable('BW3Wheel',active and st=='Bypass' and self._turns<Config.Wheel.Turns)
+  enable('BW3HatchDown',(active or self._state=='Completed') and (st=='Bypass' or st=='Lift') and not self._occupant)
   enable('BW3HatchUp',self._occupant~=nil and not self._greyRunning)
-  enable(Config.KeyItemId,active and self._stage=='Bypass')
+  enable(Config.KeyItemId,active and st=='Bypass')
  end
  m:SetAttribute('TaskText',text);m:SetAttribute('TaskTextSent',sentText~='' and sentText or text)
  m:SetAttribute('TaskTargets',table.concat(targets,','));m:SetAttribute('TaskTarget',targets[1] or '')
@@ -149,41 +174,77 @@ function Floor:_SetStage(stage)
  if self._stage==stage then return end
  self._stage=stage;self:_Progress();self._lastHint=nil
  local m=self.Model;m:SetAttribute('Stage'..stage..'At',self:_Now())
- if stage=='Dosing' then self:_Marty('B1')
- elseif stage=='Inlets' then self:_Marty('C1')
+ if stage=='Isolate' then self:_Marty('B2')
+ elseif stage=='Beds' then self:_Marty('C1')
+ elseif stage=='Filter4' then self:_StartFlood()
  elseif stage=='Bypass' then self:_Marty('D1')
  elseif stage=='Lift' then
   -- every bed and the gallery rest further out for the walk back
   self._water:SetRestWhere(function(r)return r.folder:GetAttribute('Bed')~=nil end,Config.Light.LiftRestBed)
   self._water:SetRestWhere(function(r)return r.folder:GetAttribute('Zone')=='Gallery' end,Config.Light.LiftRestGallery)
-  task.delay(3,function()if self._state~='Stopped' then self:_Marty('G1') end end)
  end
- if self._context.SetStatus then
-  self._context.SetStatus(stage=='Lift' and 'GO DOWN' or 'LEVEL 3')
- end
+ if self._context.SetStatus then self._context.SetStatus(stage=='Lift' and 'GO DOWN' or 'LEVEL 3') end
  self:_Publish()
 end
------------------------------------------------------------------- jobs
+------------------------------------------------------------------ 1 leak
+function Floor:_ShutBundValve()
+ if self._valveShut then return end
+ self._valveShut=true;self:_Progress()
+ self.Model:SetAttribute('BundValveShutAt',self:_Now())
+ self:_Marty('B1')
+ self:_Publish()
+end
 function Floor:_StartFan()
+ if self._fanOn then return end
+ self._fanOn=true
  local m=self.Model
  m:SetAttribute('ExtractFanAt',self:_Now())
- task.delay(Config.Fumes.FanSpinUp+Config.Fumes.ThinSeconds,function()if self._state~='Stopped' then m:SetAttribute('FumesActive',false) end end)
+ task.delay(Config.Fumes.FanSpinUp+Config.Fumes.ThinSeconds*.6,function()if self._state~='Stopped' then m:SetAttribute('FumesActive',false) end end)
  fx('pilot',function()local pilot=Ref(m,'FanPilot');if pilot then pilot.Color=Color3.fromRGB(90,255,120);local li=pilot:FindFirstChildWhichIsA('Light');if li then li.Color=pilot.Color end end end)
- self:_SetStage('Dosing')
+ self:_SetStage('Isolate')
 end
-function Floor:_StopPump(i)
- if self._pumps[i] then return end
- self._pumps[i]=true;self.Model:SetAttribute('Pump'..i..'OffAt',self:_Now());self:_Progress()
- local n=0;for _ in self._pumps do n+=1 end
- self.Model:SetAttribute('DosingPumpsOff',n)
- if n>=2 then self:_SetStage('Inlets') else self:_Publish() end
+------------------------------------------------------------------ 2 isolate
+function Floor:_Turned(i)
+ if i==self._ferric then
+  self._isolated=true;self.Model:SetAttribute('FerricShutAt',self:_Now())
+  self:_SetStage('Beds')
+  return
+ end
+ -- the wrong line: the valve springs back and the room fills again
+ local m=self.Model
+ self:_Replay('WrongLine')
+ m:SetAttribute('FumesActive',true);m:SetAttribute('ExtractFanAt',self:_Now())
+ for _,p in self:_Crew()do self:_Toast(p,Config.Text.WrongLine) end
+ task.delay(.8,function()if self._state~='Stopped' then self:_SetWork('BW3Iso'..i,0) end end)
+ task.delay(Config.Gas.WrongSurgeSeconds,function()if self._state~='Stopped' then m:SetAttribute('FumesActive',false) end end)
 end
-function Floor:_CloseInlet(i)
+------------------------------------------------------------------ 3 beds
+function Floor:_WriteBoard()
+ local board=Ref(self.Model,'ServiceBoard');local label=board and board:FindFirstChild('Label',true)
+ if not label then return end
+ local th={'1st','2nd','3rd','4th','5th'}
+ local lines={'<b>FILTERS - SHUTDOWN ORDER</b>',''}
+ for k,i in self._order do table.insert(lines,th[k]..'   Filter '..i) end
+ table.insert(lines,'');table.insert(lines,'F4 OUT OF SERVICE. DO NOT TOUCH.')
+ label.Text=table.concat(lines,'\n')
+end
+function Floor:_CloseBed(i,player)
  if self._inlets[i] then return end
- self._inlets[i]=true;self._inletCount+=1;self:_Progress()
+ if self._order[self._orderIdx]~=i then
+  -- the wrong filter: every bed surges and the black water lunges up the drains for a while
+  self:_Replay('BedSurge')
+  self:_Toast(player,Config.Text.WrongBed)
+  local surge=Config.Beds.Surge
+  for b=1,6 do local r=self._water:Get(b);if r then self._water:SetRest(b,r.rest+surge) end end
+  task.delay(Config.Beds.SurgeSeconds,function()
+   if self._state=='Stopped' then return end
+   for b=1,6 do local r=self._water:Get(b);if r then self._water:SetRest(b,math.max(0,r.rest-surge)) end end
+  end)
+  return
+ end
+ self._inlets[i]=true;self._inletCount+=1;self._orderIdx+=1;self:_Progress()
  self.Model:SetAttribute('Inlet'..i..'ClosedAt',self:_Now())
- self._water:SetRest(i,Config.Light.InletRest) -- every repair lets it go further
- -- the console: lever thrown, pilot lamp green to red
+ self._water:SetRest(i,Config.Light.InletRest)
  fx('console',function()
   local m=self.Model
   local lever=Ref(m,'ConsoleLever'..i);local model=lever and lever.Parent
@@ -192,32 +253,105 @@ function Floor:_CloseInlet(i)
   if pilot then pilot.Color=Color3.fromRGB(255,60,50);local li=pilot:FindFirstChildWhichIsA('Light');if li then li.Color=pilot.Color end end
  end)
  if self._inletCount==3 then self:_Marty('C3') end
- if self._inletCount==4 then task.delay(1.5,function()if self._state~='Stopped' then self:_Knock('BedWater4') end end) end
- if self._inletCount>=6 then self:_SetStage('Bypass') else self:_Publish() end
+ if self._inletCount>=#Config.Beds.Running then self:_SetStage('Filter4') else self:_Publish() end
 end
-function Floor:_HeaderStep(dt)
- local h=self._header;if not h or self._stage~='Bypass' then return end
- local zone=Ref(self.Model,'HeaderZone');local radius=Config.Header.Radius
- local near=false
- for _,p in self:_Crew()do
-  local root=rootOf(p)
-  if zone and root and p~=self._occupant and (root.Position-zone.Position).Magnitude<=radius then near=true;break end
- end
- local before,was=math.floor(h.progress),h.near
- h.near=near
- if near or h.latched then h.progress=math.min(100,h.progress+dt*Config.Header.FillPerSecond)
- else h.progress=math.max(0,h.progress-dt*Config.Header.DrainPerSecond) end
+------------------------------------------------------------------ 4 filter 4 and the flood
+function Floor:_StartFlood()
  local m=self.Model
- m:SetAttribute('HeaderPressure',math.floor(h.progress*10)/10);m:SetAttribute('HeaderHeld',near or h.latched==true)
- if math.floor(h.progress)~=before or was~=near then self:_Publish() end
+ fx('console4',function()
+  local c=Ref(m,'FilterConsole4');local label=c and c.Parent and c.Parent:FindFirstChild('Label',true)
+  for _,d in m:GetDescendants() do
+   if d:IsA('TextLabel') and d.Text:find('FILTER 4') and d.Parent and d.Parent:IsA('SurfaceGui') and d:FindFirstAncestor('FilterConsole4') then d.Text='FILTER 4  NO POWER';d.TextColor3=Color3.fromRGB(220,80,60) end
+  end
+ end)
+ self._beats:Fire('Filter4Surge')
+ task.delay(Cinematic.LEAD+5.5,function()if self._state~='Stopped' then self:_Marty('E1') end end)
+ if self._flood then
+  self._floodStage=2;self._flood:ToStage(2,Config.Flood.FirstSeconds)
+  self._floodNext=os.clock()+Config.Flood.FirstSeconds+Config.Flood.StageSeconds
+ end
 end
-function Floor:_Pressure()return self._header and self._header.progress or 0 end
+function Floor:_FloodStep()
+ local f=self._flood;if not f or self._stage~='Filter4' or self._f4Shut then return end
+ if self._floodNext and os.clock()>=self._floodNext and not self._pushing then
+  self._floodStage=math.min((self._floodStage or 1)+1,#f.Stages)
+  f:ToStage(self._floodStage,Config.Flood.StageSeconds*.8)
+  self._floodNext=os.clock()+Config.Flood.StageSeconds
+ end
+end
+function Floor:_FloodFailed()
+ if self._state=='Stopped' or self._pushing or self._f4Shut then return end
+ self._pushing=true
+ local cp=Ref(self.Model,'L3Checkpoint')
+ PushBack.Run(self:_Crew(),cp,{onMoved=function()
+  if self._state=='Stopped' then return end
+  self._said.E2=nil;self:_Marty('E2')
+  self._floodStage=Config.Flood.DropTo
+  self._flood:ToStage(self._floodStage,3)
+  self._floodNext=os.clock()+Config.Flood.StageSeconds
+  self._pushing=false
+ end})
+end
+-- the black water on the gallery floor sits on the Filter 4 valve unless something draws it away
+local function headPoint(r)
+ local s=math.clamp(r.folder:GetAttribute('Head') or 0,0,r.length)
+ for i=2,#r.pts do
+  if s<=r.cum[i] then local a,b=r.pts[i-1],r.pts[i];local seg=r.cum[i]-r.cum[i-1];return a:Lerp(b,seg>0 and (s-r.cum[i-1])/seg or 0) end
+ end
+ return r.pts[#r.pts]
+end
+function Floor:_F4Stalled()
+ local wheel=Ref(self.Model,'F4HandWheel');if not wheel or not self._water then return false end
+ for _,r in self._water._reaches do
+  if r.folder:GetAttribute('Zone')=='Gallery' then
+   local p=headPoint(r)
+   -- the film covers everything from the drain to its head: near any part of it counts
+   for k=0,8 do
+    local q=r.pts[1]:Lerp(p,k/8)
+    if (Vector3.new(q.X,0,q.Z)-Vector3.new(wheel.Position.X,0,wheel.Position.Z)).Magnitude<Config.Flood.StallDistance then return true end
+   end
+  end
+ end
+ return false
+end
+function Floor:_ShutF4()
+ if self._f4Shut then return end
+ self._f4Shut=true;self:_Progress()
+ self.Model:SetAttribute('F4ShutAt',self:_Now())
+ if self._flood then self._flood:ToStage(1,Config.Flood.DrainSeconds) end
+ self:_Marty('E3')
+ task.delay(4,function()if self._state~='Stopped' then self:_SetStage('Bypass') end end)
+end
+------------------------------------------------------------------ 5 bypass
+function Floor:_HeaderStep(dt)
+ if self._stage~='Bypass' then return end
+ local p,w=self:_Work('BW3Header')
+ local h=self._header or {progress=0,near=false,latched=false,last=0}
+ self._header=h
+ local before=math.floor(h.progress)
+ local pct=math.clamp(p/w*100,0,100)
+ -- a crew of one: once the header reaches what the wheel needs it stays there
+ if not h.latched and #self:_Crew()<=1 and pct>=Config.Header.WheelNeeds then h.latched=true;self.Model:SetAttribute('HeaderLatched',true) end
+ if h.latched and p<w then self:_SetWork('BW3Header',w);pct=100 end
+ h.near=pct>h.progress+.05 or (h.near and pct>=h.progress-.01 and os.clock()-h.last<1.3)
+ if pct>h.progress+.05 then h.last=os.clock() end
+ h.progress=pct
+ local m=self.Model
+ if pct>0 and not m:GetAttribute('HeaderStartedAt') then m:SetAttribute('HeaderStartedAt',self:_Now()) end
+ m:SetAttribute('HeaderPressure',math.floor(pct*10)/10);m:SetAttribute('HeaderHeld',h.near or h.latched==true)
+ if math.floor(pct)~=before then self:_Publish() end
+end
+function Floor:_WheelStep()
+ if self._stage~='Bypass' then return end
+ local p=self:_Work('BW3Wheel')
+ local turns=math.floor(p+1e-4)
+ while self._turns<math.min(turns,Config.Wheel.Turns) do self:_TurnWheel(self._occupant or self:_Sent()) end
+end
 function Floor:_TurnWheel(player)
  self._turns+=1;self:_Progress()
  local m=self.Model;local t=self:_Now()
  m:SetAttribute('WheelTurn'..self._turns..'At',t)
  if self._turns==2 then
-  -- the chamber lamp and the hall's last bed lamp go out
   m:SetAttribute('ChamberLampOffAt',t+1.2);m:SetAttribute('HB3OffAt',t+1.2)
   fx('lamps',function()
    task.delay(1.2,function()
@@ -228,14 +362,13 @@ function Floor:_TurnWheel(player)
    end)
   end)
  end
- if self._turns>=Config.Wheel.Turns then
+ if self._turns>=Config.Wheel.Turns and player then
   m:SetAttribute('BypassOpenAt',t);m:SetAttribute('GreyFaceAt',t+Config.Grey.Delay)
   self._greyRunning=true;self._greyFor=player
-  -- his one line at the glass comes from the intercom behind the player; his mouth stays shut
   task.delay(Config.Grey.Delay+Config.Grey.LineAt,function()if self._state~='Stopped' and player.Parent then self:_Marty('F1',{player}) end end)
   task.delay(Config.Grey.Delay+Config.Grey.End,function()
    if self._state=='Stopped' then return end
-   self._greyRunning=false
+   self._greyRunning=false;self._greyDoneAt=os.clock()
    local ok,code=self._context.CompleteObjective()
    if not ok then warn('[ElevatorHorror] Level 3 objective: '..tostring(code)) end
    if ok then self._state='Completed' end
@@ -243,6 +376,27 @@ function Floor:_TurnWheel(player)
   end)
  end
  self:_Publish()
+end
+------------------------------------------------------------------ 6 the payoff and the walk out
+function Floor:_Payoff()
+ if self._paid then return end
+ self._paid=os.clock()
+ self._beats:Fire('ClearWaterTurns')
+ fx('mimic',function()
+  local panel=Ref(self.Model,'MimicPanel');local g=panel and panel:FindFirstChild('Mimic')
+  if not g then return end
+  local function lamp(name,c)local f=g:FindFirstChild(name);local l=f and f:FindFirstChild('Lamp');if l then l.BackgroundColor3=c end end
+  task.delay(Cinematic.LEAD+1.5,function()
+   lamp('Filters',Color3.fromRGB(150,30,26));lamp('Bypass',Color3.fromRGB(230,150,40));lamp('Tank',Color3.fromRGB(230,150,40))
+   local l1=g:FindFirstChild('Line1');if l1 then l1.BackgroundColor3=Color3.fromRGB(20,22,22) end
+   local lb=g:FindFirstChild('LineBypass');if lb then lb.BackgroundColor3=Color3.fromRGB(20,22,22) end
+   local l2=g:FindFirstChild('Line2');if l2 then l2.BackgroundColor3=Color3.fromRGB(20,22,22) end
+   -- the route the water takes now: round the filters, through the bypass, into the clear water tank
+   for _,nm in {'LineBypass','LineBypassTank','LineBypassTankUp'} do local f=g:FindFirstChild(nm);if f then f.BackgroundColor3=Color3.fromRGB(230,150,40) end end
+  end)
+ end)
+ task.delay(Cinematic.LEAD+7.4,function()if self._state~='Stopped' then self:_Marty('G1') end end)
+ task.delay(Cinematic.LEAD+12,function()if self._state~='Stopped' then self._beats:Fire('LightsDie') end end)
 end
 ------------------------------------------------------------------ the hatch
 function Floor:_Ladder(player,down)
@@ -313,7 +467,7 @@ function Floor:_MartyStep()
  if where=='A' then
   -- he leaves the cross walk once the crew has seen the hall and nobody is looking
   local entered=self._hallAt
-  local go=(self._inletCount>=1) or (entered and os.clock()-entered>40) or self._stage=='Bypass'
+  local go=(self._inletCount>=1) or (entered and os.clock()-entered>40) or self:_StageIndex()>=table.find(STAGES,'Filter4')
   if go and hidden('A') then self:_MartyTo(nil) end
  elseif where==nil and self._stage=='Bypass' and not self._martyDone then
   local _,_,carrier=self:_KeyState()
@@ -321,8 +475,10 @@ function Floor:_MartyStep()
  elseif where=='B' then
   local installed,_,carrier=self:_KeyState()
   if (carrier or installed) and hidden('B') then self._martyDone=true;self:_MartyTo(nil) end
+ elseif where==nil and self._stage=='Lift' and self._paid and hidden('D') then
+  -- the walk out: he is at the end of the passage, between the crew and the lift
+  self:_MartyTo('D')
  end
- -- TALK only at the hook
  local talk=marty:FindFirstChild('MartyTalk')
  if talk then
   local on=self._martyAt=='B' and self._stage=='Bypass'
@@ -392,47 +548,92 @@ end
 function Floor:Prepare(context)
  assert(not self._context,'Already prepared');self._context=context
  local m=self.Model
- m:SetAttribute('FumesActive',true);m:SetAttribute('HeaderPressure',0);m:SetAttribute('InletsClosed',0);m:SetAttribute('WheelTurns',0);m:SetAttribute('DosingPumpsOff',0)
+ m:SetAttribute('FumesActive',false);m:SetAttribute('HeaderPressure',0);m:SetAttribute('InletsClosed',0);m:SetAttribute('WheelTurns',0)
  self._water=BlackWater.new(m);self._water:Prepare(context)
  self._markers=m:FindFirstChild('MartyMarkers')
  self._marty=self._markers and self._markers:FindFirstChild('Marty')
  if self._marty then self._marty:SetAttribute('TalkSets','L3');self._marty:SetAttribute('NoTurn',true);self:_MartyTo('A') end
- local function hold(id,refName,label,seconds,can,done,extra)
-  local def={interactionId=id,target=Refs.Get(m,refName),interactionType='Panel',label=label,holdDuration=seconds,allowedRunPhases={FloorActive=true},
-   canUse=function(player)
-    if self._state=='Stopped' or context.IsSuspended() then return false,'Unavailable' end
-    return can(player)
-   end,
-   complete=function(player)
-    if self._state=='Stopped' or context.IsSuspended() then return false,'Unavailable' end
-    local ok,why=can(player);if not ok then return false,why or 'Unavailable' end
-    return done(player)
-   end}
-  for k,v in extra or {} do def[k]=v end
+ -- this run's puzzles: which valve tag is ferric, and the order the board gives
+ local tags={1,2,3}
+ for i=3,2,-1 do local j=self._rng:NextInteger(1,i);tags[i],tags[j]=tags[j],tags[i] end
+ for i=1,3 do
+  local tag=Ref(m,'ValveTag'..i);local t=TAGS[tags[i]]
+  if tag then tag.Color=t.color end
+  if t.name=='ORANGE' then self._ferric=i end
+ end
+ self._order=table.clone(Config.Beds.Running)
+ for i=#self._order,2,-1 do local j=self._rng:NextInteger(1,i);self._order[i],self._order[j]=self._order[j],self._order[i] end
+ self:_WriteBoard()
+ -- the flood over the hall
+ local zone=Water.All(m)[1]
+ if zone then
+  self._flood=Water.new(zone,{crew=function()return self:_Crew()end,
+   drain=function(p,amount)context.DrainStamina(p,amount)end,
+   slow=function(p,mult)context.SetSpeedModifier(p,'L3Flood',mult)end,
+   onFail=function()self:_FloodFailed()end})
+ end
+ -- beats
+ self._beats=Beats.new(m,{
+  DrumBurst={when={zone='FumeZone'},run=function()
+   m:SetAttribute('FumesActive',true)
+   task.delay(2.2,function()if self._state~='Stopped' then self:_Marty('B0') end end)
+  end},
+  WrongLine={when={manual=true}},
+  BedSurge={when={manual=true}},
+  Filter4Surge={when={manual=true},cinematic='Filter4'},
+  ClearWaterTurns={when={manual=true},cinematic='Payoff'},
+  LightsDie={when={manual=true}},
+ },{crew=function()return self:_Crew()end})
+ local function job(id,refName,label,def,can,done)
+  def.interactionId=id;def.target=Refs.Get(m,refName);def.label=label;def.allowedRunPhases={FloorActive=true}
+  def.canUse=function(player)
+   if self._state=='Stopped' or context.IsSuspended() then return false,'Unavailable' end
+   return can(player)
+  end
+  def.complete=function(player)
+   if self._state=='Stopped' or context.IsSuspended() then return false,'Unavailable' end
+   local ok,why=can(player);if not ok then return false,why or 'Unavailable' end
+   return done(player)
+  end
   context.RegisterInteraction(def)
  end
  local function live(stage)return self:_Live() and self._stage==stage end
- hold('BW3Fan','FanStarter','START FAN',H.Fan,function()return live('Fumes'),'Unavailable' end,function()self:_StartFan();return true,'Started' end)
- for i=1,2 do
-  hold('BW3Pump'..i,'DosingSwitch'..i,'SHUT OFF',H.Pump,function()return live('Dosing') and not self._pumps[i],'Unavailable' end,function()self:_StopPump(i);return true,'Stopped' end)
+ -- 1 leak
+ job('BW3BundValve','BundValve','SHUT VALVE',{mode='Crank',work=W.BundValve},
+  function()return live('Leak') and not self._valveShut,'Unavailable' end,function()self:_ShutBundValve();return true,'Shut' end)
+ local starter=Refs.Get(m,'FanStarter')
+ starter:SetAttribute('LeverRef','FanLever');starter:SetAttribute('LeverAxis','Z');starter:SetAttribute('LeverDeg',-110)
+ job('BW3FanLever','FanStarter','PULL LEVER',{mode='Lever',work=W.FanLever,persist=false},
+  function()
+   if not live('Leak') or self._fanOn then return false,'Unavailable' end
+   if not self._valveShut then return false,'ValveFirst' end
+   return true
+  end,function()self:_StartFan();return true,'Started' end)
+ -- 2 isolate
+ for i=1,3 do
+  job('BW3Iso'..i,'IsoValve'..i,'CLOSE VALVE',{mode='Crank',work=W.IsoValve},
+   function()return live('Isolate'),'Unavailable' end,function()self:_Turned(i);return true,'Turned' end)
  end
- for i=1,6 do
-  hold('BW3Inlet'..i,'FilterConsole'..i,'CLOSE INLET',H.Inlet,function()return live('Inlets') and not self._inlets[i],'Unavailable' end,function()self:_CloseInlet(i);return true,'Closed' end)
+ -- 3 beds (Filter 4's console has no power)
+ for _,i in Config.Beds.Running do
+  job('BW3Bed'..i,'FilterConsole'..i,'CLOSE INLET',{holdDuration=H.Bed},
+   function()return live('Beds') and not self._inlets[i],'Unavailable' end,function(p)self:_CloseBed(i,p);return true,'Closed' end)
  end
- hold('BW3Header','HeaderConsole','HOLD PRESSURE',H.Header,function()return live('Bypass') and not self._header,'Unavailable' end,function()
-  local solo=#self:_Crew()<=1
-  self._header={progress=0,near=true,latched=solo}
-  m:SetAttribute('HeaderStartedAt',self:_Now());m:SetAttribute('HeaderLatched',solo);self:_Progress();self:_Publish()
-  return true,'Started'
- end)
- hold('BW3Wheel','BypassWheel','TURN WHEEL',H.Wheel,function(player)
-  if not live('Bypass') or self._turns>=Config.Wheel.Turns then return false,'Unavailable' end
-  local installed=self:_KeyState()
-  if not installed or player~=self._occupant then return false,'Unavailable' end
-  if self:_Pressure()<Config.Header.WheelNeeds then return false,'NoPressure' end
-  return true
- end,function(player)self:_TurnWheel(player);return true,'Turned' end)
- hold('BW3HatchDown','ChamberHatch','CLIMB DOWN',H.Hatch,function(player)
+ -- 4 filter 4 by hand
+ job('BW3F4Wheel','F4HandWheel','SHUT FILTER 4',{mode='Crank',work=W.F4Wheel,rate=function()return self:_F4Stalled() and 0 or 1 end},
+  function()return live('Filter4') and not self._f4Shut,'Unavailable' end,function()self:_ShutF4();return true,'Shut' end)
+ -- 5 bypass: the header pump and the wheel
+ job('BW3Header','HeaderConsole','PUMP',{mode='Pump',work=W.Header,sustain=true,decay=Config.Header.Decay,pumpGap=Config.Header.PumpGap,exclusive=false},
+  function(player)return live('Bypass') and player~=self._occupant,'Unavailable' end,function()return true,'Pumping' end)
+ job('BW3Wheel','BypassWheel','TURN WHEEL',{mode='Crank',work=W.BypassWheel,
+   rate=function(player)return (player==self._occupant and self:_Pressure()>=Config.Header.WheelNeeds) and 1 or 0 end},
+  function(player)
+   if not live('Bypass') or self._turns>=Config.Wheel.Turns then return false,'Unavailable' end
+   local installed=self:_KeyState()
+   if not installed or player~=self._occupant then return false,'Unavailable' end
+   return true
+  end,function(player)self:_WheelStep();return true,'Turned' end)
+ job('BW3HatchDown','ChamberHatch','CLIMB DOWN',{holdDuration=H.Hatch},function(player)
   if self._occupant or self._leaving then return false,'Busy' end
   if self._stage~='Bypass' and self._stage~='Lift' then return false,'Unavailable' end
   local installed,_,carrier,key=self:_KeyState()
@@ -442,10 +643,9 @@ function Floor:Prepare(context)
   if (installed or keyBelow) and (sent==nil or sent==player) then return true end
   return false,'NeedKey'
  end,function(player)return self:_Ladder(player,true) end)
- hold('BW3HatchUp','ChamberLadder','CLIMB UP',H.Hatch,function(player)
+ job('BW3HatchUp','ChamberLadder','CLIMB UP',{holdDuration=H.Hatch,requiresLineOfSight=false},function(player)
   return player==self._occupant and not self._greyRunning and not self._leaving,'Unavailable'
- end,function(player)return self:_Ladder(player,false) end,{requiresLineOfSight=false})
- -- the key and its socket on the wheel stand
+ end,function(player)return self:_Ladder(player,false) end)
  local key=Refs.Get(m,'BypassKey');local stand=Refs.Get(m,'WheelStand')
  context.RegisterItem(Config.KeyItemId,Config.KeyKind,key,{hold=H.Key,label='TAKE KEY'})
  context.RegisterSocket(Config.KeySocketId,Config.KeyKind,stand,{hold=H.Socket,label='PUT IN KEY'})
@@ -482,8 +682,9 @@ function Floor:Prepare(context)
   end
  end))
  self._scope:Add(function()
+  if self._flood then self._flood:Stop() end
   for _,p in Players:GetPlayers()do
-   for _,a in {'EHL3Sent','EHL3InChamber','EHL3LadderAt','EHL3LadderDir','EHL3Toast','EHRadioLine','EHRadioWho','EHRadioFace','EHRadioKind','EHRadioAt','EHRadioSeconds','EHMartyTalkedL3'} do
+   for _,a in {'EHL3Sent','EHL3InChamber','EHL3LadderAt','EHL3LadderDir','EHL3Toast','EHRadioLine','EHRadioWho','EHRadioFace','EHRadioKind','EHRadioAt','EHRadioSeconds','EHMartyTalkedL3','EHPushBackAt','EHWading'} do
     if p:GetAttribute(a)~=nil then p:SetAttribute(a,nil) end
    end
   end
@@ -492,7 +693,10 @@ end
 function Floor:_Step(dt)
  if self._state~='Active' and self._state~='Completed' then return end
  local m=self.Model
- if not self._context.IsSuspended() then self._water:Step(dt) end
+ local live=not self._context.IsSuspended()
+ if live then self._water:Step(dt) end
+ if self._beats and live then self._beats:Step() end
+ if self._flood and live then self._flood:Step(dt);self:_FloodStep() end
  -- who carries the key is the one who is sent (until it sits in the stand)
  if self._stage=='Bypass' then
   local installed,state,carrier=self:_KeyState()
@@ -510,7 +714,6 @@ function Floor:_Step(dt)
  if occ and not self._leaving then
   local root=occ.Parent and rootOf(occ)
   if not root or occ:GetAttribute('EHLifeState')~='Alive' or not inside(Ref(m,'ChamberZone'),root.Position) then
-   -- (a moment's grace while the climb down is still in progress)
    local at=occ.Parent and occ:GetAttribute('EHL3LadderAt')
    if not at or self:_Now()-at>Config.Ladder.Seconds+1 then
     if occ.Parent then occ:SetAttribute('EHL3InChamber',nil) end
@@ -520,7 +723,18 @@ function Floor:_Step(dt)
    end
   end
  end
- if self._state=='Active' and not self._context.IsSuspended() then self:_HeaderStep(dt) end
+ if self._state=='Active' and live then self:_HeaderStep(dt);self:_WheelStep() end
+ -- the Filter 4 valve: say why it will not turn
+ if self._stage=='Filter4' and not self._f4Shut then
+  for _,p in self:_Crew()do
+   if p:GetAttribute('EHActiveInteraction')=='BW3F4Wheel' and self:_F4Stalled() and os.clock()-(self._stallToast or 0)>6 then
+    self._stallToast=os.clock();self:_Toast(p,Config.Text.Stalled)
+    if not self._said.StallHint then self._said.StallHint=true;self:_Hint('Stalled') end
+   end
+  end
+ end
+ -- the payoff: once the sent player is back up, or a while after the face
+ if self._stage=='Lift' and not self._paid and ((self._exitAt and os.clock()-self._exitAt>1.5) or (self._greyDoneAt and os.clock()-self._greyDoneAt>20)) then self:_Payoff() end
  -- first look at the hall
  if not self._hallAt then
   local zone=Ref(m,'HallEntryZone')
@@ -531,7 +745,7 @@ function Floor:_Step(dt)
  if self._activeAt and self._state=='Active' then
   local e=os.clock()-self._activeAt
   if e>=Config.Marty.A1.at then self:_Marty('A1') end
-  if e>=Config.Marty.A2.at and self._stage=='Fumes' then self:_Marty('A2') end
+  if e>=Config.Marty.A2.at and self._stage=='Leak' and not m:GetAttribute('Beat_DrumBurst') then self:_Marty('A2') end
  end
  pcall(self._RadioStep,self)
  -- last line: the first crew member back in the cabin
@@ -545,6 +759,7 @@ function Floor:_Step(dt)
  if self._state=='Active' and self._progressAt and os.clock()-self._progressAt>Config.HintSeconds and os.clock()-(self._lastHint or 0)>Config.HintSeconds then
   self._lastHint=os.clock()
   local key=self._stage
+  if key=='Leak' and self._valveShut then key='LeakFan' end
   if key=='Bypass' then
    local installed,_,carrier=self:_KeyState()
    key=(not installed and not carrier) and 'BypassKey' or 'BypassPressure'
@@ -557,6 +772,8 @@ function Floor:Activate()
  assert(self._context);self._state='Active';self._activeAt=os.clock();self:_Progress()
  self:_Publish()
  if self._context.SetStatus then self._context.SetStatus('LEVEL 3') end
+ -- the doors open onto the landing: a short look out over the filter hall first
+ task.delay(.8,function()if self._state=='Active' then Cinematic.Play(self.Model,'Arrival') end end)
 end
 -- STUDIO ONLY (reached through ElevatorService's ElevatorDebug BindableFunction: "L3:<cmd>")
 function Floor:Debug(cmd)
@@ -564,20 +781,28 @@ function Floor:Debug(cmd)
  local p=self:_Crew()[1]
  local k,v=string.match(cmd,'^(%w+)=(%w+)$')
  if k=='Stage' and table.find(STAGES,v) then
-  if v~='Fumes' then self.Model:SetAttribute('FumesActive',false) end
-  if table.find(STAGES,v)>3 then for i=1,6 do if not self._inlets[i] then self._inlets[i]=true;self._inletCount+=1;self.Model:SetAttribute('Inlet'..i..'ClosedAt',self:_Now()) end end end
+  local idx=table.find(STAGES,v)
+  if idx>1 then self._valveShut=true;self._fanOn=true;self.Model:SetAttribute('FumesActive',false) end
+  if idx>2 then self._isolated=true end
+  if idx>3 then for _,i in Config.Beds.Running do if not self._inlets[i] then self._inlets[i]=true;self._inletCount+=1;self.Model:SetAttribute('Inlet'..i..'ClosedAt',self:_Now()) end end;self._orderIdx=#self._order+1 end
+  if idx>4 then self._f4Shut=true;if self._flood then self._flood:ToStage(1,1) end end
   self:_SetStage(v);return 'Stage '..v
+ elseif cmd=='Order' then return table.concat(self._order,',')..' ferric=V'..tostring(self._ferric)
+ elseif cmd=='Flood' then if self._flood then self._flood:ToStage(#self._flood.Stages,3) end;return 'Flooding'
+ elseif cmd=='F4' then self:_ShutF4();return 'F4 shut'
+ elseif cmd=='Payoff' then self:_Payoff();return 'Payoff'
  elseif cmd=='Sent' and p then
   self:_SetStage('Bypass')
   local stand=Refs.Get(self.Model,'WheelStand');stand:SetAttribute('EHInstalledItem',Config.KeyItemId)
-  self._header=self._header or {progress=100,near=true,latched=true}
+  self._header=self._header or {progress=100,near=true,latched=true,last=0};self._header.latched=true
   self:_Ladder(p,true);task.wait(1.2);self:_SetSent(p);return 'Sent '..p.Name
  elseif cmd=='Turn' and p then
-  if self._turns<Config.Wheel.Turns then self:_TurnWheel(self._occupant or p) end;return 'Turns '..self._turns
+  if self._turns<Config.Wheel.Turns then self:_SetWork('BW3Wheel',self._turns+1);self:_WheelStep() end;return 'Turns '..self._turns
  elseif cmd=='Snuff' and p then return tostring(self._water:Snuff(p))
  elseif cmd=='Reveal' and p then self._said.R1=nil;self:_Imitate('R1',p);return 'Reveal'
  elseif cmd=='State' then
-  return string.format('stage=%s inlets=%d turns=%d pressure=%.0f occupant=%s marty=%s',self._stage,self._inletCount,self._turns,self:_Pressure(),tostring(self._occupant),tostring(self._martyAt))
+  return string.format('stage=%s beds=%d/%s turns=%d pressure=%.0f flood=%s occupant=%s marty=%s',self._stage,self._inletCount,table.concat(self._order,','),self._turns,self:_Pressure(),
+   self._flood and string.format('%.1f',self._flood:Rise()) or '-',tostring(self._occupant),tostring(self._martyAt))
  end
  return 'Unknown'
 end

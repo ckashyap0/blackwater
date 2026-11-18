@@ -9,5 +9,14 @@ return Freeze({
 		Arrival={letterbox=true,shots={
 			{from='CamArrivalA',to='CamArrivalB',dur=5,ease='Sine',fov={55,62},caption='LEVEL 3   FILTRATION'},
 		}},
+		-- the inlets are shut and Filter 4 lifts over its weir: black water starts across the hall
+		Filter4={letterbox=true,shots={
+			{from='CamF4A',to='CamF4B',dur=4.5,ease='Quad',fov={60,50},shake=.12},
+		}},
+		-- the bypass is open: the clean channel in the office turns black, then the panel that says where it goes next
+		Payoff={letterbox=true,shots={
+			{from='CamPayA',to='CamPayA',dur=3.2,ease='Linear',fov={58,52}},
+			{from='CamPayB',to='CamPayB',dur=3,ease='Linear',fov={50,44}},
+		}},
 	},
 })

@@ -68,6 +68,11 @@ function Controller:_Effect(floor,entry,old)
 	elseif kind=='Shake' then FX.Shake(entry.amp or .3,entry.seconds or 1,parts[1] and parts[1].Position)
 	elseif kind=='Sound' then FX.Sound(entry.id,parts[1],entry.volume,entry.speed,entry.life)
 	elseif kind=='Show' or kind=='Hide' then FX.Show(parts,kind=='Show')
+	elseif kind=='Tint' then
+		-- parts change colour (clean water turning black); a late joiner gets the end colour at once
+		for _,p in parts do if p:IsA('BasePart') then
+			TweenService:Create(p,TweenInfo.new(old and 0 or (entry.seconds or 4),Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),{Color=entry.color or Color3.new(0,0,0),Reflectance=entry.reflectance or p.Reflectance}):Play()
+		end end
 	end
 end
 
@@ -117,17 +122,24 @@ function Controller:_WaterStep(dt)
 				local w=self._water[f]
 				if not w then
 					w={surfaces={},lamps={},t=0}
-					for _,p in f:GetChildren() do if p:IsA('BasePart') and p.Name:sub(1,7)=='Surface' then table.insert(w.surfaces,{part=p,dy=p.Position.Y-base}) end end
+					for _,p in f:GetChildren() do if p:IsA('BasePart') and p.Name:sub(1,7)=='Surface' then
+						-- FloorY: this surface only shows once the water is over that height (a deck over a dry gallery)
+						table.insert(w.surfaces,{part=p,dy=p.Position.Y-base,floorY=p:GetAttribute('FloorY'),tr=p:GetAttribute('BWSurfaceTr') or 0})
+					end end
 					-- lamps that can drown: anything in the floor tagged BWLamp, or lamps listed under the zone (Lamps folder)
 					local floor=floorOf(f)
 					for _,l in CS:GetTagged('BWLamp') do if floor and l:IsDescendantOf(floor) then table.insert(w.lamps,{part=l,under=false}) end end
 					self._water[f]=w
 				end
 				w.t+=dt
+				local risen=curve(f)>.03
 				for _,s in w.surfaces do
 					local p=s.part
 					local cf=p.CFrame
-					p.CFrame=CFrame.new(cf.X,level+s.dy,cf.Z)*cf.Rotation
+					local y=level+s.dy
+					local show=risen and (not s.floorY or y>s.floorY)
+					p.Transparency=show and s.tr or 1
+					p.CFrame=CFrame.new(cf.X,s.floorY and math.max(y,s.floorY) or y,cf.Z)*cf.Rotation
 					local tx=p:FindFirstChildOfClass('Texture')
 					if tx then tx.OffsetStudsU=(w.t*.6)%tx.StudsPerTileU;tx.OffsetStudsV=(w.t*.25)%tx.StudsPerTileV end
 				end

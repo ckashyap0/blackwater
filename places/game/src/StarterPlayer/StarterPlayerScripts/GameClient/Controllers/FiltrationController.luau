@@ -27,6 +27,7 @@ local Config=require(Shared.Config.Level3)
 local Knock=require(Shared.Utilities.KnockSignal)
 local RadioLine=require(Shared.Utilities.RadioLine)
 local MartyGrey=require(Shared.Utilities.MartyGrey)
+local SetPieceFX=require(Shared.Utilities.SetPieceFX)
 local Controller={};Controller.__index=Controller
 local EASE=TweenInfo.new(.3,Enum.EasingStyle.Quart,Enum.EasingDirection.Out)
 local L=Config.Light
@@ -127,6 +128,21 @@ end
 function Controller:_Beds(b,floor,now)
  for i,bed in b.beds do
   local at=floor:GetAttribute('Inlet'..i..'ClosedAt')
+  -- (R43) shutting a bed air-scours it: the surface boils white and roars, then it drains and its glow dies
+  if type(at)=='number' and bed.scoured~=at then
+   bed.scoured=at
+   if now-at<3 then
+    SetPieceFX.Burst(bed.part,'Boil',Config.Bed.ScourSeconds)
+    SetPieceFX.Sound(Config.Sounds.drone,bed.part,.6,1.6,Config.Bed.ScourSeconds+1)
+    SetPieceFX.Shake(.12,1.2,bed.part.Position)
+   end
+  end
+  if not bed.glow then
+   bed.glow={}
+   for k=1,2 do local g=Refs.Find(floor,'BedGlow'..i..'_'..k);local l=g and g:FindFirstChildWhichIsA('Light');if l then table.insert(bed.glow,{l=l,b=l.Brightness}) end end
+  end
+  local dim=type(at)=='number' and smooth((now-at-1)/Config.Bed.DropSeconds) or 0
+  for _,g in bed.glow do g.l.Brightness=g.b*(1-dim) end
   local u=type(at)=='number' and smooth((now-at)/Config.Bed.DropSeconds) or 0
   if bed.u~=u then
    bed.u=u;bed.part.CFrame=bed.base-Vector3.new(0,Config.Bed.DropStuds*u,0)
@@ -186,18 +202,16 @@ function Controller:_Fumes(b,floor,now,dt,eye)
  end
  local want=inZone and thin or 0
  self._fog=(self._fog or 0)+(want-(self._fog or 0))*(1-math.exp(-dt*2.5))
- if self._fog>.01 then
-  if not self._fogBase then self._fogBase={Lighting.FogEnd,Lighting.FogColor,Lighting.FogStart} end
-  local base=self._fogBase;local k=self._fog
-  Lighting.FogEnd=base[1]+(26-base[1])*k;Lighting.FogStart=base[3]*(1-k)
-  Lighting.FogColor=base[2]:Lerp(Color3.fromRGB(92,84,52),k)
- elseif self._fogBase then
-  local base=self._fogBase;self._fogBase=nil
-  Lighting.FogEnd,Lighting.FogColor,Lighting.FogStart=base[1],base[2],base[3]
- end
+ -- (R43) the floor's own darker, longer fog (Config.Level3.Lighting), closing in to ochre in the fumes.
+ -- The station's values are kept in _fogBase and put back when the floor is gone (Start).
+ if not self._fogBase then self._fogBase={Lighting.FogEnd,Lighting.FogColor,Lighting.FogStart} end
+ local F=Config.Lighting;local k=self._fog
+ Lighting.FogEnd=F.FogEnd+(26-F.FogEnd)*k;Lighting.FogStart=F.FogStart*(1-k)
+ Lighting.FogColor=F.FogColor:Lerp(Color3.fromRGB(92,84,52),k)
 end
 function Controller:_Haze(dt)
  local want=self._player:GetAttribute('EHL3Haze') or 0
+ if self._player:GetAttribute('EHCinematic') then want=0 end -- (R43) a camera cut is never blurred by where you stand
  local kind=self._player:GetAttribute('EHL3HazeKind')
  local rate=want>(self._haze or 0) and 1/Config.Fumes.RiseSeconds or 1/Config.Fumes.ClearSeconds
  local h=self._haze or 0

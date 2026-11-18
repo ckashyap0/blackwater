@@ -77,7 +77,8 @@ end
 local function under(volume,pos)
 	if not volume then return false end
 	local p=volume.CFrame:PointToObjectSpace(pos);local h=volume.Size/2
-	return math.abs(p.X)<=h.X and math.abs(p.Z)<=h.Z
+	-- (inside the volume's height too: a gallery under the flooded hall stays dry)
+	return math.abs(p.X)<=h.X and math.abs(p.Z)<=h.Z and math.abs(p.Y)<=h.Y
 end
 
 -- call from the floor's tick
