@@ -71,11 +71,14 @@ local COUPLE = .3
 -- thumb is +), and its down angle is solved so the fingertip rests TIP_CLEAR studs above the key under it.
 -- (Nov 5 b) straighter: a big curl and fully re-aimed base joints crushed and twisted the knuckles, so the end joints
 -- curl only a little and the base joints turn only YAW_BLEND of the way toward the FAN line (less twist).
+-- (R43b, Hale v6) the end joint now bends in WORLD space, about the horizontal axis across the finger, so CURL2 is
+-- the real knuckle angle. The v6 rig's bone X axes are skewed, so a local X curl of 40 gave only 6-20 degrees and a
+-- twist. With the world bend the fingers arch (knuckles highest, tips down on the keys) like the owner's reference.
 local POSE = {
-	HAND_X = 6,
-	FAN = {index = 5, middle = 1, ring = -3, pinky = -7},
-	YAW_BLEND = .7,
-	CURL2 = {index = 6, middle = 5, ring = 5, pinky = 4},
+	HAND_X = 10,
+	FAN = {index = 3, middle = 0, ring = -2, pinky = -4},
+	YAW_BLEND = .8,
+	CURL2 = {index = 38, middle = 40, ring = 38, pinky = 32},
 	TIP_CLEAR = .045,     -- (Nov 5 e) more room so a keystroke never pushes a fingertip into the keyboard
 	TIP_LEN = 1.6,        -- (Nov 5 c) end segment + fingertip, as a multiple of the base segment (1.15 put the tips in the keys)
 	THUMB_LEN = 1.3,      -- (Nov 5 d) the thumb's base (metacarpal) is left alone; only its knuckle bends, bringing the
@@ -141,19 +144,23 @@ function M.SolvePose(m, scope)
 		for f, fan in POSE.FAN do
 			local b1 = B[f .. '_01_' .. side]; local b2 = B[f .. '_02_' .. side]
 			if not (b1 and b2) then continue end
-			local L2 = (b2.WorldPosition - b1.WorldPosition).Magnitude * POSE.TIP_LEN
 			b1.Transform = CFrame.identity; b2.Transform = CFrame.identity
-			local own = b1.WorldCFrame.UpVector; own = Vector3.new(own.X, 0, own.Z).Unit   -- where it points now
+			local L2 = (b2.TransformedWorldCFrame.Position - b1.TransformedWorldCFrame.Position).Magnitude * POSE.TIP_LEN
+			local own = b1.TransformedWorldCFrame.UpVector; own = Vector3.new(own.X, 0, own.Z).Unit   -- where it points now
 			local fanDir = (fwd * math.cos(math.rad(fan)) + ts * math.sin(math.rad(fan))).Unit
 			local dirH = own:Lerp(fanDir, POSE.YAW_BLEND).Unit
-			local c2 = CFrame.Angles(math.rad(POSE.CURL2[f]), 0, 0)
-			local function apply(p)
-				local d = dirH * math.cos(p) - Vector3.yAxis * math.sin(p)
-				b1.Transform = CFrame.identity
-				local R = b1.WorldCFrame.Rotation; local cur = R.UpVector
+			local curl = math.rad(POSE.CURL2[f])
+			-- turn a bone (with everything above it already posed) so its long axis points along world direction d
+			local function rotTo(bone, d)
+				bone.Transform = CFrame.identity
+				local R = bone.TransformedWorldCFrame.Rotation; local cur = R.UpVector
 				local ax = cur:Cross(d); local ang = math.asin(math.clamp(ax.Magnitude, 0, 1)); if cur:Dot(d) < 0 then ang = math.pi - ang end
-				local Dw = ax.Magnitude > 1e-6 and CFrame.fromAxisAngle(ax.Unit, ang) or CFrame.identity
-				b1.Transform = R:Inverse() * Dw * R; b2.Transform = c2
+				bone.Transform = ax.Magnitude > 1e-6 and (R:Inverse() * CFrame.fromAxisAngle(ax.Unit, ang) * R) or CFrame.identity
+			end
+			local function apply(p)
+				rotTo(b1, dirH * math.cos(p) - Vector3.yAxis * math.sin(p))
+				local q = p + curl
+				rotTo(b2, dirH * math.cos(q) - Vector3.yAxis * math.sin(q))
 				local w = b2.TransformedWorldCFrame
 				return w.Position + w.UpVector * L2
 			end
