@@ -81,7 +81,7 @@ Paths are the same in both places unless marked.
 - Camera cuts: `Utilities.Cinematic.Play(floorModel, id)` on the server. Shots are in `Config.Cinematics[EncounterId]`, and markers are invisible parts with a `Ref` (Level 3 keeps them in `12_Cameras`). The UI is `StarterGui.Cinematic`. A cut sets `EHCinematic`, which locks input and hides the HUD.
 - Beats: `Floors.BeatRunner` (when = stage / after+delay / zone / attr / manual). It stamps `Beat_<name>`, and the clients play `Config.<EncounterId>.Beats[name]` effects (Lights, Burst, Beacons, Shake, Sound, Show/Hide; `keep=true` re-applies for late joiners).
 - Flood: a Folder tagged `BWRisingWater` with `Surface*` parts, a `Volume`, and attributes `Stages`, `FailRise`, `Drain`, `Slow` (`Floors.RisingWater`). Lamps tagged `BWLamp` go out under the surface. `Floors.PushBack.Run(players, checkpointPart)` fades the crew out and moves them to a checkpoint. Nobody is hurt.
-- Effects: `Utilities.SetPieceFX`. Particle textures come from `Config.FX` (Blender sprites, still empty: they fall back to the engine's own).
+- Effects: `Utilities.SetPieceFX`. Particle textures come from `Config.FX.Textures`: Blender sprites made by vault `Art Pipeline/scripts/bw3_fx_sprites.py`, exported to `Downloads\BlackWaterModels\BW3x` and uploaded as group decals. Sounds are `Config.FX.Sounds`, Pro Sound Effects clips; a beat names one with `sound='<key>'` and can pass `loop=true`. Floors are watched on Heartbeat, so beats still land while the window is minimised.
 
 ### Floors and storage
 - Edit floors in `Workspace.BlackwaterAuthoring`.

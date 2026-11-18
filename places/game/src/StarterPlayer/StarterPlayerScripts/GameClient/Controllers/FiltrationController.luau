@@ -87,7 +87,11 @@ function Controller:_Bind(floor)
  end
  local zone=Refs.Find(floor,'FumeZone');b.fumeZone=zone
  for _,d in floor:GetDescendants()do
-  if d:IsA('ParticleEmitter') and d:GetAttribute('Fume') then table.insert(b.emitters,{e=d,rate=d.Rate*(touch() and .5 or 1)}) end
+  if d:IsA('ParticleEmitter') and d:GetAttribute('Fume') then
+   -- (R43) the dosing room's own fumes use the Blender gas sprite
+   local gas=SetPieceFX.Presets.Gas;if gas then d.Texture=gas.Texture() end
+   table.insert(b.emitters,{e=d,rate=d.Rate*(touch() and .5 or 1)})
+  end
  end
  b.monitor=Refs.Find(floor,'ChamberMonitor')
  b.fan=Refs.Find(floor,'ExtractFanRotor')
@@ -133,7 +137,8 @@ function Controller:_Beds(b,floor,now)
    bed.scoured=at
    if now-at<3 then
     SetPieceFX.Burst(bed.part,'Boil',Config.Bed.ScourSeconds)
-    SetPieceFX.Sound(Config.Sounds.drone,bed.part,.6,1.6,Config.Bed.ScourSeconds+1)
+    SetPieceFX.Sound(Config.Sounds.scour,bed.part,.65,.9,Config.Bed.ScourSeconds+1)
+    SetPieceFX.Sound('Gurgle',bed.part,.5,.8,6)
     SetPieceFX.Shake(.12,1.2,bed.part.Position)
    end
   end

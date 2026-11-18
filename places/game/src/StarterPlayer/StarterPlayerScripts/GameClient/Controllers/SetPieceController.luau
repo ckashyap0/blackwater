@@ -66,7 +66,7 @@ function Controller:_Effect(floor,entry,old)
 	elseif kind=='Burst' then for _,p in parts do FX.Burst(p,entry.kind or 'Steam',entry.seconds,entry.props) end
 	elseif kind=='Beacons' then FX.Beacons(parts,entry.seconds or 10)
 	elseif kind=='Shake' then FX.Shake(entry.amp or .3,entry.seconds or 1,parts[1] and parts[1].Position)
-	elseif kind=='Sound' then FX.Sound(entry.id,parts[1],entry.volume,entry.speed,entry.life)
+	elseif kind=='Sound' then FX.Sound(entry.sound or entry.id,parts[1],entry.volume,entry.speed,entry.life,entry.loop)
 	elseif kind=='Show' or kind=='Hide' then FX.Show(parts,kind=='Show')
 	elseif kind=='Tint' then
 		-- parts change colour (clean water turning black); a late joiner gets the end colour at once
@@ -152,6 +152,23 @@ function Controller:_WaterStep(dt)
 					end
 				end
 				local vol=f:FindFirstChild('Volume')
+				-- the water is heard: a roar while it climbs, a slow lap against the walls once it settles
+				local rate=w.last and math.abs(level-w.last)/math.max(dt,1/240) or 0;w.last=level
+				if risen and vol then
+					if not w.rumble then
+						local function loop(key,speed)
+							local id=FX.SoundId(key);if not id then return nil end
+							local s=Instance.new('Sound');s.Name='BWWater_'..key;s.SoundId=id;s.Looped=true;s.Volume=0;s.PlaybackSpeed=speed
+							s.RollOffMinDistance=40;s.RollOffMaxDistance=220;s.Parent=vol;s:Play();return s
+						end
+						w.rumble=loop('Rumble',.55) or false;w.lap=loop('Lap',.8) or false
+					end
+					w.rv=(w.rv or 0)+(math.clamp(rate/.35,0,1)-(w.rv or 0))*math.min(1,dt*1.5)
+					if w.rumble then w.rumble.Volume=.1+.55*w.rv end
+					if w.lap then w.lap.Volume=.4*(1-w.rv) end
+				elseif w.rumble then
+					w.rumble.Volume=0;if w.lap then w.lap.Volume=0 end
+				end
 				if cam and vol and cam.CFrame.Position.Y<level then
 					local lp=vol.CFrame:PointToObjectSpace(cam.CFrame.Position);local h=vol.Size/2
 					if math.abs(lp.X)<=h.X and math.abs(lp.Z)<=h.Z then murky=true end
@@ -217,10 +234,13 @@ end
 function Controller:Start()
 	pcall(Cinematic.Start)
 	self._scope:Add(self._player:GetAttributeChangedSignal('EHPushBackAt'):Connect(function()self:_PushBack()end))
-	self._scope:Add(RunService.RenderStepped:Connect(function(dt)
-		dt=math.min(dt,1/30)
+	-- floors are picked up on Heartbeat so beats still land while the window is minimised (RenderStepped pauses)
+	self._scope:Add(RunService.Heartbeat:Connect(function()
 		local runtime=workspace:FindFirstChild('Runtime');local env=runtime and runtime:FindFirstChild('DescentEnvironment')
 		if env then for _,f in env:GetChildren() do if f:GetAttribute('EncounterId') then self:_Watch(f) end end end
+	end))
+	self._scope:Add(RunService.RenderStepped:Connect(function(dt)
+		dt=math.min(dt,1/30)
 		pcall(self._WaterStep,self,dt)
 		pcall(self._MachineStep,self,dt)
 	end))

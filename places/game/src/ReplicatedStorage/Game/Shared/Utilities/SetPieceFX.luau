@@ -5,7 +5,7 @@
 --   Lights(parts, on, gap, opts) switch the lights in parts off (or on) one after another, with flicker and pops
 --   Beacons(parts, seconds)      spin amber beacons and light them
 --   Shake(amplitude, seconds)    camera shake that never builds into your aim
---   Sound(id, parent, volume, speed, life)
+--   Sound(id or Config.FX key, parent, volume, speed, life, loop)
 --   Show(parts, visible)         hide or show parts on this screen only
 -- Textures for particles come from Config.FX (Blender sprites); empty entries fall back to the engine's own.
 -- Phones get half the particles (MobilePerf sets EHLowFx on the player).
@@ -13,6 +13,7 @@ local RunService=game:GetService('RunService')
 local Players=game:GetService('Players')
 local SoundService=game:GetService('SoundService')
 local Debris=game:GetService('Debris')
+local TweenService=game:GetService('TweenService')
 local M={}
 
 local function fxConfig()
@@ -70,11 +71,23 @@ function M.Burst(at,kind,seconds,overrides)
 	return stop
 end
 
-function M.Sound(id,parent,volume,speed,life)
-	if not id or id=='' then return nil end
-	local s=Instance.new('Sound');s.SoundId=id;s.Volume=volume or .5;s.PlaybackSpeed=speed or 1
+-- a Config.FX sound by key, or the id itself
+function M.SoundId(key)
+	if not key or key=='' then return nil end
+	local id=fxConfig().Sounds[key]
+	if id and id~='' then return id end
+	return string.find(key,'rbxasset',1,true) and key or nil
+end
+-- one-shot (or looped) sound; it fades out over its last .8 s instead of cutting off
+function M.Sound(id,parent,volume,speed,life,loop)
+	id=M.SoundId(id);if not id then return nil end
+	life=life or 8
+	local s=Instance.new('Sound');s.SoundId=id;s.Volume=volume or .5;s.PlaybackSpeed=speed or 1;s.Looped=loop==true
 	if parent then s.RollOffMinDistance=8;s.RollOffMaxDistance=90 end
-	s.Parent=parent or SoundService;s:Play();Debris:AddItem(s,life or 8)
+	s.Parent=parent or SoundService;s:Play();Debris:AddItem(s,life)
+	task.delay(math.max(life-.8,0),function()
+		if s.Parent then TweenService:Create(s,TweenInfo.new(math.min(.8,life),Enum.EasingStyle.Quad),{Volume=0}):Play() end
+	end)
 	return s
 end
 

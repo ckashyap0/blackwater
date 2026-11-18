@@ -117,14 +117,19 @@ return Freeze({
 			{fx='Burst',ref='DrumLeak',kind='Spray',seconds=1.4},
 			{fx='Shake',amp=.35,seconds=.9,ref='DrumLeak'},
 			{fx='Beacons',refs={'DosingBeacon1','DosingBeacon2'},seconds=40},
-			{fx='Sound',ref='DrumLeak',id='rbxassetid://9117060042',volume=.7,speed=.55,life=4},
+			{fx='Sound',ref='DrumLeak',sound='Burst',volume=.9,speed=.8,life=3},
+			{fx='Sound',ref='DrumLeak',sound='Spray',volume=.7,speed=.9,life=6},
+			{fx='Sound',ref='DrumLeak',sound='Hiss',volume=.45,speed=.8,life=14,loop=true},
+			{fx='Sound',ref='DosingBeacon1',sound='Alarm',volume=.3,speed=.7,life=20},
 		},
 		WrongLine={
 			{fx='Burst',ref='DrumLeak',kind='Gas',seconds=6},
 			{fx='Shake',amp=.25,seconds=.6},
+			{fx='Sound',ref='DrumLeak',sound='Hiss',volume=.5,speed=.9,life=6,loop=true},
 		},
 		BedSurge={
 			{fx='Shake',amp=.3,seconds=1.2},
+			{fx='Sound',ref='BedWater3',sound='Roar',volume=.7,speed=.8,life=5},
 			{fx='Burst',refs={'BedWater1','BedWater2','BedWater3','BedWater5','BedWater6'},kind='Boil',seconds=3},
 		},
 		Filter4Surge={
@@ -132,11 +137,13 @@ return Freeze({
 			{fx='Shake',amp=.45,seconds=2.5,at=.8},
 			{fx='Burst',ref='BedWater4',kind='Mist',seconds=20},
 			{fx='Lights',refs={'BedGlow2_1','BedGlow2_2','BedGlow6_1','BedGlow6_2'},on=false,gap=.5,at=2.2,keep=true},
-			{fx='Sound',ref='BedWater4',id='rbxassetid://9112839813',volume=.9,speed=.35,life=8},
+			{fx='Sound',ref='BedWater4',sound='Roar',volume=.8,speed=.6,life=9,at=.6},
+			{fx='Sound',ref='HallBeacon2',sound='Alarm',volume=.4,speed=.7,life=24,at=.4},
 		},
 		ClearWaterTurns={
 			{fx='Tint',ref='ClearWater',color=Color3.fromRGB(9,10,10),reflectance=0,seconds=5,at=1.2,keep=true},
 			{fx='Burst',ref='ClearWater',kind='Mist',seconds=8,at=1},
+			{fx='Sound',ref='ClearWater',sound='Gurgle',volume=.7,speed=.6,life=8,at=.8},
 		},
 		LightsDie={
 			{fx='Lights',refs={'HB6','HB5','HB4','HB3','HB2','HB1'},on=false,gap=.7,sparks=true,keep=true},
@@ -150,7 +157,8 @@ return Freeze({
 		crackle='rbxassetid://87751901232664',drip='rbxassetid://9120519525',heart='rbxassetid://176554627',
 		torchOn='rbxassetid://9116283749',torchOff='rbxassetid://9116283546',gasp='rbxassetid://9114555843',
 		motor='rbxassetid://9112889325',drone='rbxassetid://9112839813',
-		-- found for this floor (free Creator Store audio); empty = fall back to the nearest existing sound
-		lap='',fan='',fizz='',cough='',bulb='',
+		-- found for this floor (Pro Sound Effects clips on the Creator Store); empty = fall back to the nearest one above
+		lap='rbxassetid://9120570661',fan='rbxassetid://9114776167',fizz='rbxassetid://9119380766',
+		cough='rbxassetid://9116457892',bulb='rbxassetid://9114592817',scour='rbxassetid://9125741935',
 	},
 })
