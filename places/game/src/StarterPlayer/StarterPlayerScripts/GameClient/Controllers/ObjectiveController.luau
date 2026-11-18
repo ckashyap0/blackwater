@@ -63,7 +63,9 @@ local STANDIN_T=0 -- (Nov 13: a Highlight skips see-through parts, so the stand-
                   -- handled by the larger INSET and the distance fade below)
 local FAR_FULL,FAR_NONE,FAR_DEPTH=16,24,0 -- (Nov 13, later) the line only comes in once you are close enough to use the thing (full inside 16 studs, gone past 24), and never through walls -- (Nov 13, Ryan) full line inside 26 studs, fades out by 58; no through-wall line past 40
 local OUTLINE_T=0 -- (Nov 15, Ryan: crisp, solid line) was .08
-local FAR_SOFT={28,110,.6} -- (Nov 16) studs where the line starts to soften, where it is softest, and how far it softens (0-1)
+local FAR_SOFT={28,110,.6}
+local NEAR_FADE={9,4.5} -- (Nov 17, Ryan) studs: walking up to a target (Marty, a machine) the line fades out - full beyond 9, gone inside 4.5 -- (Nov 16) studs where the line starts to soften, where it is softest, and how far it softens (0-1)
+local function nearFade(d) local u=math.clamp((d-NEAR_FADE[2])/(NEAR_FADE[1]-NEAR_FADE[2]),0,1);return u*u*(3-2*u) end
 local OUTLINE_ALWAYS=true -- (Nov 15, Ryan) no fade-in, no distance or close-up fade, visible through walls from anywhere
 --      -- (R36) outline transparency when fully shown: a firm, clear line, through walls too
 local INSET=.03           -- (Nov 13: was .012 - at range the stand-in z-fought the real face and the line crawled) studs: how far each stand-in face sits inside the real one (a fixed hair, not a
@@ -313,7 +315,7 @@ function Controller:_DrawOutlines(dt)
    if mk.circle then
     -- the wheel's single circle (always on top): same strength rules as the other outlines
     local strength=mk.alpha
-    if OUTLINE_ALWAYS then local u=math.clamp((dist-FAR_SOFT[1])/(FAR_SOFT[2]-FAR_SOFT[1]),0,1);u=u*u*(3-2*u);strength=mk.alpha*(1-FAR_SOFT[3]*u) end
+    if OUTLINE_ALWAYS then local u=math.clamp((dist-FAR_SOFT[1])/(FAR_SOFT[2]-FAR_SOFT[1]),0,1);u=u*u*(3-2*u);strength=mk.alpha*(1-FAR_SOFT[3]*u)*nearFade(dist) end
     local t=1-(1-OUTLINE_T)*strength
     for _,s in mk.circle do if math.abs(s.Transparency-t)>.002 then s.Transparency=t end end
    elseif mk.h then
@@ -338,7 +340,7 @@ function Controller:_DrawOutlines(dt)
      -- Highlight's line is a fixed pixel width, so on a small far-off shape it turned into a hard, jagged block.
      -- Past FAR_SOFT studs it eases to a softer, see-through line (never gone), and stays crisp up close.
      local u=math.clamp((dist-FAR_SOFT[1])/(FAR_SOFT[2]-FAR_SOFT[1]),0,1);u=u*u*(3-2*u)
-     strength=mk.alpha*(1-FAR_SOFT[3]*u)
+     strength=mk.alpha*(1-FAR_SOFT[3]*u)*nearFade(dist)
     end
     local t=1-(1-OUTLINE_T)*strength
     if math.abs(mk.h.OutlineTransparency-t)>.002 then mk.h.OutlineTransparency=t end

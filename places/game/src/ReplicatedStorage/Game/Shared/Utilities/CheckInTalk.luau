@@ -31,9 +31,11 @@ M.CharsPerSecond = 28      -- typing speed (a little slower: it's early)
 M.NameChars = 10           -- length {name} is timed as, whatever the real name is
 M.Hold = 1.2               -- after a line finishes typing
 M.PerChar = .025           -- extra reading time per character
-M.Lead = .4                -- before the first line
+M.Lead = 1.1              -- before the first line (Nov 17: the glass slides open first - M.SashOpen)
 M.FadeIn, M.FadeOut = .25, .5   -- each line fades in, and out before the next
 M.Gap = .2                 -- dark between two lines
+M.SashOpen = .75          -- (Nov 17) the service window's glass slides open over this long, from the moment the talk starts
+M.SashClose = .8          -- and slides shut over this long once the box has faded out
 
 -- line timings (seconds after CheckInTalkAt): {shown, start, typed, finish}
 local timeline, total = {}, 0
@@ -157,6 +159,39 @@ function M.Start()
 		local cam = Instance.new('Camera'); cam.FieldOfView = 20; cam.Parent = haleView; haleView.CurrentCamera = cam
 		local at = hp + Vector3.new(0, .3, 0) + dir * .15
 		cam.CFrame = CFrame.lookAt(at + (dir + Vector3.new(0, .25, 0)).Unit * 3.6, at)
+	end
+	-- (Nov 17) THE SERVICE WINDOW: when someone checks in, Hale's sliding glass pane (ServiceHatch.ServiceSash) slides
+	-- open (eased) before the first line, and shuts again after the talk. Everyone sees the same thing from the
+	-- server's CheckInTalkAt. Purely local: the pane is moved on each screen.
+	do
+		local sashModel, sashParts, sashBy, lastK = nil, nil, nil, nil
+		local function smoothS(x) x = math.clamp(x, 0, 1) return x * x * x * (x * (x * 6 - 15) + 10) end
+		RunService.RenderStepped:Connect(function()
+			if not (sashModel and sashModel:IsDescendantOf(workspace)) then
+				sashModel = nil; sashParts = nil
+				local runtime = workspace:FindFirstChild('Runtime')
+				local m = runtime and runtime:FindFirstChild('ServiceSash', true)
+				if not m then return end
+				sashModel = m; sashBy = m:GetAttribute('SlideBy') or Vector3.new(0, 0, 1.16); lastK = nil
+				local base = m:GetPivot(); sashParts = {}
+				for _, p in m:GetDescendants() do if p:IsA('BasePart') then sashParts[p] = base:ToObjectSpace(p.CFrame) end end
+				sashModel:SetAttribute('ClosedPivot', base)
+			end
+			local yard = findYard(sashModel)
+			local at = yard and yard:GetAttribute('CheckInTalkAt')
+			local k = 0
+			if type(at) == 'number' then
+				local t = workspace:GetServerTimeNow() - at
+				local shutAt = total
+				if t >= 0 and t < shutAt then k = smoothS(t / M.SashOpen)
+				elseif t >= shutAt then k = 1 - smoothS((t - shutAt) / M.SashClose) end
+			end
+			if k == lastK then return end
+			lastK = k
+			local base = sashModel:GetAttribute('ClosedPivot')
+			local cf = base + base:VectorToWorldSpace(sashBy) * k -- (SlideBy is in the pane's own frame)
+			for p, off in sashParts do if p.Parent then p.CFrame = cf * off end end
+		end)
 	end
 	local first, last = timeline[1], timeline[#timeline]
 	local function smooth(x) x = math.clamp(x, 0, 1) return x * x * (3 - 2 * x) end

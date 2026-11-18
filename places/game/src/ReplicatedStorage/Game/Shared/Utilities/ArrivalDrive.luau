@@ -193,7 +193,9 @@ end
 -- read as three separate lights). The pool starts right under the lamp and is built from many thin, very faint
 -- layers, so it reads as one soft pool with no visible edges or source.
 -- (R36) the real headlights are back (spot=1, with shadows), plus a faint cone of light through the rain (CONE)
-local POOL={start=.25,len=30,spread=1.4,w0=1.6,w1=12,y=.08,spot=1,bright=.8,layers={}}
+-- (Nov 17, Ryan: 'remove the light shadow, just keep the light beams') the real SpotLights are off in the drives
+-- (spot=0): only the road pools and the soft cones through the rain are drawn
+local POOL={start=.25,len=30,spread=1.4,w0=1.6,w1=12,y=.08,spot=0,bright=.8,layers={}}
 local CONE={len=26,w0=.5,w1=7,t0=.88,drop=-.06}
 for i=1,10 do table.insert(POOL.layers,{w=1-(i-1)*.075,t=.975}) end
 local function roadPools(copy)

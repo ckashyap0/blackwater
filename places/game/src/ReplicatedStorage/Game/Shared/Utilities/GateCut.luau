@@ -13,7 +13,8 @@ local TweenService = game:GetService('TweenService')
 local M = {}
 local started = false
 local FADE = .35
-local SHOT_END = 3.3 -- seconds after the stamp when the fade back to your view starts (the lift takes 2.4)
+local SHOT_END = 3.3
+local REGROUP_HOLD = 4.15 -- seconds after the stamp the black lifts (the regroup happens at 3.75 on the server) -- seconds after the stamp when the fade back to your view starts (the lift takes 2.4)
 local MOTOR = 'rbxassetid://9119630180' -- the barrier motor already used in the yard, slowed down
 
 local function blackScreen(player)
@@ -68,7 +69,10 @@ local function play(floor, at)
 	cam.CameraType = type0 == Enum.CameraType.Scriptable and Enum.CameraType.Custom or type0
 	cam.FieldOfView = fov0
 	player:SetAttribute('EHCinematic', nil)
-	task.wait(.1)
+	-- (Nov 17) stay black until the server has brought the crew together beside whoever opened the gate
+	-- (Level5Floor REGROUP_AT = 3.75 s), so the move is never seen
+	local hold = (at + REGROUP_HOLD) - workspace:GetServerTimeNow()
+	task.wait(math.max(.1, hold))
 	fade(black, false)
 	gui:Destroy()
 	task.delay(1.5, function() s:Destroy() end)
