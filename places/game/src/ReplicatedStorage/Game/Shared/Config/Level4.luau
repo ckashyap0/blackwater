@@ -46,4 +46,24 @@ return Freeze({
   },
  },
  RadioFrequencies={91.3,96.5,99.1,102.7,104.7,106.9},
+ -- (R43 phase 4) breakers are pulled down (Lever job, InteractionService); pulls per breaker
+ Work={Breaker=.6},
+ -- the core restart cut (Config.Cinematics.Level4.CoreRestart): its length, and when the core lights come up in it
+ CoreCutSeconds=6.2,CoreLightsAt=1.4,
+ -- set-piece beats the floor stamps (Beat_<name>); every client plays these (SetPieceController)
+ Beats={
+  -- halfway through the restart the core strains
+  RebootHalf={
+   {fx='Shake',amp=.2,seconds=1},
+   {fx='Burst',ref='CoreCap',kind='Steam',seconds=3},
+   {fx='Sound',ref='CoreCap',sound='Hiss',volume=.4,speed=.9,life=3},
+  },
+  -- the core catches: plays under the cut
+  CoreOnline={
+   {fx='Shake',amp=.18,seconds=1.6,at=1.2}, -- (gentle: a shake rolls the camera inside the cut)
+   {fx='Sound',ref='RebootZone',id='rbxassetid://9112889325',volume=.7,speed=.7,life=6,at=1},
+   {fx='Burst',ref='CoreCap',kind='Steam',seconds=5,at=1.4},
+   {fx='Sound',ref='RebootZone',sound='Burst',volume=.5,speed=.8,life=3,at=1.4},
+  },
+ },
 })

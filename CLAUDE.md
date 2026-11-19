@@ -83,6 +83,12 @@ Paths are the same in both places unless marked.
 - Flood: a Folder tagged `BWRisingWater` with `Surface*` parts, a `Volume`, and attributes `Stages`, `FailRise`, `Drain`, `Slow` (`Floors.RisingWater`). Lamps tagged `BWLamp` go out under the surface. `Floors.PushBack.Run(players, checkpointPart)` fades the crew out and moves them to a checkpoint. Nobody is hurt.
 - Effects: `Utilities.SetPieceFX`. Particle textures come from `Config.FX.Textures`: Blender sprites made by vault `Art Pipeline/scripts/bw3_fx_sprites.py`, exported to `Downloads/BlackWaterModels/BW3/fx` and uploaded as group decals. Sounds are `Config.FX.Sounds`, Pro Sound Effects clips; a beat names one with `sound='<key>'` and can pass `loop=true`. Floors are watched on Heartbeat, so beats still land while the window is minimised.
 
+### Floors 5 and 4 on the set-piece systems (R43 phase 4)
+- Floor 5: the isolation valve is a `Crank` (`Config.Level5.Work.Valve` turns), switches A-C and the gate release are `Lever` jobs. Beats `ValveShut`, `PowerBack`, `GateOpen` (`Config.Level5.Beats`), stamped by the floor itself (`Beat_<name>`, no BeatRunner).
+- Floor 4: breakers 1-5 are `Lever` jobs (`Config.Level4.Work.Breaker`). Restarting the core plays the cut `Config.Cinematics.Level4.CoreRestart` (markers `CamCoreA/B/C` in `Level4.12_Cameras`); the core lights come up `CoreLightsAt` seconds into it. Beats `RebootHalf`, `CoreOnline` use the drum's top `CoreCap` (Ref added to `MainCore.Cap`).
+- `GateCut` stays its own script on purpose: it is tuned and timed to the server regroup at 3.75 s.
+- A camera shake beat during a cut rolls the camera, so keep those amplitudes under about .2.
+
 ### Floors and storage
 - Edit floors in `Workspace.BlackwaterAuthoring`.
 - `EnvironmentService` parks floors into `ServerStorage.GameAssets.FloorTemplates` at play time.

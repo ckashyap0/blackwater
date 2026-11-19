@@ -4,6 +4,13 @@
 -- Ref attribute; their CFrame is the camera pose. Keep cuts short (3-8 s): the player loses control meanwhile.
 local Freeze=require(script.Parent.Parent.Utilities.TableUtil).DeepFreeze
 return Freeze({
+	-- (R43 phase 4) the core restart: a slow push in on the core as it comes back on, then a wide of the room
+	Level4={
+		CoreRestart={letterbox=true,shots={
+			{from='CamCoreA',to='CamCoreB',dur=3.6,ease='Sine',fov={52,46},shake=.06},
+			{from='CamCoreC',to='CamCoreC',dur=2.6,ease='Linear',fov={60,56}},
+		}},
+	},
 	Level3={
 		-- the doors open onto the filter hall: a slow push out over the beds
 		Arrival={letterbox=true,shots={

@@ -18,10 +18,13 @@ local Config=require(game.ReplicatedStorage.Game.Shared.Config.Level4)
 local Scope=require(game.ReplicatedStorage.Game.Shared.Utilities.CleanupScope)
 local Refs=require(game.ReplicatedStorage.Game.Shared.Utilities.FloorRefs)
 local Level5Floor=require(script.Parent.Level5Floor)
+local Cinematic=require(game.ReplicatedStorage.Game.Shared.Utilities.Cinematic)
 local Players=game:GetService('Players')
 local RunService=game:GetService('RunService')
 local function Ref(root,name)return Refs.Find(root,name)end
 local function fx(name,fn)local ok,err=pcall(fn);if not ok then warn('[ElevatorHorror] Level 4 effect failed ('..name..'): '..tostring(err))end end
+-- (R43 phase 4) a set-piece beat: every client plays Config.Level4.Beats[name] (SetPieceController)
+local function beat(model,name)model:SetAttribute('Beat_'..name,workspace:GetServerTimeNow())end
 local Floor={};Floor.__index=Floor
 -- crawlable vents work exactly as on Level 5 (same routes, covers, screws and climb)
 Floor._PrepareVents=Level5Floor._PrepareVents
@@ -188,7 +191,7 @@ function Floor:_RebootStep(dt)
  local m=self.Model
  m:SetAttribute('RebootProgress',math.floor(r.progress*10)/10);m:SetAttribute('RebootNear',anyone)
  if r.progress>=50 and not r.half then
-  r.half=true;self:_Radio(Config.Radio.RebootHalf,'All');m:SetAttribute('FlickerAt',self:_Now())
+  r.half=true;self:_Radio(Config.Radio.RebootHalf,'All');m:SetAttribute('FlickerAt',self:_Now());beat(m,'RebootHalf')
  end
  if r.progress>=100 then self:_RebootDone();return end
  if math.floor(r.progress)~=before or wasNear~=anyone then self:_Publish() end
@@ -200,17 +203,22 @@ function Floor:_RebootDone()
  if not ok then warn('[ElevatorHorror] Level 4 objective: '..tostring(code)) end
  self._stage='Lift';if ok then self._state='Completed' end
  m:SetAttribute('CircuitCoreAt',self:_Now());m:SetAttribute('Circuit'..'Core',true)
- fx('core lights',function()
-  for _,v in m:GetDescendants()do
-   if v:GetAttribute('Circuit')=='Core' then
-    if v:IsA('Light') then v.Enabled=true
-    elseif v:IsA('BasePart') then v.Material=Enum.Material.Neon;v.Color=v:GetAttribute('LitColor') or Color3.fromRGB(181,194,162) end
+ -- (R43) the core comes back on camera: a short cut, and its lights come up a beat into it
+ fx('core cut',function()Cinematic.Play(m,'CoreRestart');beat(m,'CoreOnline')end)
+ task.delay(Cinematic.LEAD+Config.CoreLightsAt,function()
+  if self._state=='Stopped' then return end
+  fx('core lights',function()
+   for _,v in m:GetDescendants()do
+    if v:GetAttribute('Circuit')=='Core' then
+     if v:IsA('Light') then v.Enabled=true
+     elseif v:IsA('BasePart') then v.Material=Enum.Material.Neon;v.Color=v:GetAttribute('LitColor') or Color3.fromRGB(181,194,162) end
+    end
    end
-  end
+  end)
  end)
  if self._context.SetStatus then self._context.SetStatus('GO DOWN') end
  self:_Publish()
- task.delay(2.5,function()if self._state~='Stopped' then self:_Radio(Config.Radio.RebootDone,'All') end end)
+ task.delay(Cinematic.LEAD+Config.CoreCutSeconds+1,function()if self._state~='Stopped' then self:_Radio(Config.Radio.RebootDone,'All') end end)
 end
 ------------------------------------------------------------------ prepare
 function Floor:Prepare(context)
@@ -260,7 +268,7 @@ function Floor:Prepare(context)
  end
  -- the breakers
  for i=1,5 do
-  context.RegisterInteraction({interactionId='BW4Breaker'..i,target=Refs.Get(m,'BreakerHit'..i),interactionType='Panel',label='FLIP '..i,holdDuration=.3,quick=true,allowedRunPhases={FloorActive=true},
+  context.RegisterInteraction({interactionId='BW4Breaker'..i,target=Refs.Get(m,'BreakerHit'..i),interactionType='Panel',label='PULL '..i,holdDuration=.3,quick=true,mode='Lever',work=Config.Work.Breaker,allowedRunPhases={FloorActive=true},
    canUse=function()if not self:_Live() or self._stage~='Jobs' or self._done.Breakers or self._flipped[i] then return false,'Unavailable' end;return true end,
    complete=function(player)if not self:_Live() or self._stage~='Jobs' or self._done.Breakers or self._flipped[i] then return false,'Unavailable' end;return self:_Breaker(i,player) end})
  end

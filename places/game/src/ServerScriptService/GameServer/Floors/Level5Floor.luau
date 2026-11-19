@@ -14,6 +14,8 @@ local function text(part,value)local label=part and part:FindFirstChildWhichIsA(
 -- Cosmetic effects (tweens, sounds, readouts) must never be able to abort a task: progress is
 -- committed and published first, then effects run protected.
 local function fx(name,fn)local ok,err=pcall(fn);if not ok then warn('[ElevatorHorror] Level 5 effect failed ('..name..'): '..tostring(err))end end
+-- (R43 phase 4) a set-piece beat: every client plays Config.Level5.Beats[name] (SetPieceController)
+local function beat(model,name)model:SetAttribute('Beat_'..name,workspace:GetServerTimeNow())end
 function Floor.new(model,number)return setmetatable({Model=model,Number=number,_state='Inactive',_stage=1,_circuits={},_count=0,_pressure=5,_target=3,_compressor=false,_verified=false,_verifying=false,_scope=Scope.new()},Floor)end
 ------------------------------------------------------------------ air receiver control module
 -- The lift brakes' air receiver is run from a wall-mounted control module beside the old cabinet:
@@ -180,7 +182,7 @@ function Floor:_Terminals()
 end
 function Floor:_Power(id)
  self._circuits[id]=true;self._count+=1;self.Model:SetAttribute('Circuit'..id..'At',workspace:GetServerTimeNow());self.Model:SetAttribute('Circuit'..id,true)
- if self._count==3 then self.Model:SetAttribute('PowerRestored',true);self._stage=4 end
+ if self._count==3 then self.Model:SetAttribute('PowerRestored',true);self._stage=4;beat(self.Model,'PowerBack') end
  self:_Publish()
  fx('circuit',function()
   local index=table.find(Config.SwitchIds,id)
@@ -218,11 +220,12 @@ end
 function Floor:Prepare(context)
  assert(not self._context,'Already prepared');self._context=context
  text(Ref(self.Model,'PanelReadout'),'NO POWER')
- context.RegisterInteraction({interactionId='BW5Isolation',target=Refs.Get(self.Model,'IsolationValve'),interactionType='Panel',label='CLOSE VALVE',holdDuration=2.5,allowedRunPhases={FloorActive=true},
+ -- (R43) the valve is cranked shut (circle the mouse, stick or finger) and the gate lever is pulled down
+ context.RegisterInteraction({interactionId='BW5Isolation',target=Refs.Get(self.Model,'IsolationValve'),interactionType='Panel',label='CLOSE VALVE',holdDuration=2.5,mode='Crank',work=Config.Work.Valve,allowedRunPhases={FloorActive=true},
   canUse=function()return self:_Available(1)end,
   complete=function()
    if not self:_Available(1)then return false,'Unavailable'end
-   self.Model:SetAttribute('LineIsolated',true);self._stage=2;self:_Publish()
+   self.Model:SetAttribute('LineIsolated',true);self._stage=2;self:_Publish();beat(self.Model,'ValveShut')
    fx('isolation',function()
     local wheel=Ref(self.Model,'ValveWheel')
     if wheel then
@@ -238,11 +241,11 @@ function Floor:Prepare(context)
    end)
    return true,'Isolated'
   end})
- context.RegisterInteraction({interactionId='BW5GateRelease',target=Refs.Get(self.Model,'GateRelease'),interactionType='Panel',label='OPEN GATE',holdDuration=2,allowedRunPhases={FloorActive=true},
+ context.RegisterInteraction({interactionId='BW5GateRelease',target=Refs.Get(self.Model,'GateRelease'),interactionType='Panel',label='OPEN GATE',holdDuration=2,mode='Lever',work=Config.Work.Gate,allowedRunPhases={FloorActive=true},
   canUse=function()return self:_Available(5)end,
   complete=function()
    if not self:_Available(5)then return false,'Unavailable'end
-   self._stage=6;self.Model:SetAttribute('GateReleased',true);self:_Publish()
+   self._stage=6;self.Model:SetAttribute('GateReleased',true);self:_Publish();beat(self.Model,'GateOpen')
    fx('gate',function()
     local gate=Ref(self.Model,'ReturnGate')
     if gate then
@@ -386,7 +389,7 @@ function Floor:Prepare(context)
   if self._state=='Active' and self._stage==2 and Refs.Get(self.Model,'LinkSocket'):GetAttribute('EHInstalledItem')==Config.LinkItemId then self._stage=3;self:_Publish();text(Ref(self.Model,'PanelReadout'),'TURN ON ALL 3 SWITCHES');fx('fit',function()self:_Sound(Refs.Get(self.Model,'LinkSocket'),'fit')end)end
  end))
  for _,id in Config.SwitchIds do
-  context.RegisterInteraction({interactionId='BW5Switch'..id,target=Refs.Get(self.Model,'Switch'..id),interactionType='Panel',label='TURN ON',holdDuration=Config.SwitchHoldSeconds,allowedRunPhases={FloorActive=true},
+  context.RegisterInteraction({interactionId='BW5Switch'..id,target=Refs.Get(self.Model,'Switch'..id),interactionType='Panel',label='PULL ON',holdDuration=Config.SwitchHoldSeconds,mode='Lever',work=Config.Work.Switch,allowedRunPhases={FloorActive=true},
    canUse=function()return self:_Available(3) and not self._circuits[id],'Unavailable'end,
    complete=function()if not self:_Available(3) or self._circuits[id]then return false,'Unavailable'end;self:_Power(id);return true,'Powered'end})
  end
